@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Assessment | StudentLID</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    
+    <style>
+        /* Reset body for full-screen edge-to-edge layout */
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1e1e1e;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* --- Sidebar Layout --- */
+        .sidebar {
+            width: 260px;
+            min-width: 260px;
+            background-color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            z-index: 10;
+        }
+
+        .logo-container {
+            padding: 24px;
+            font-size: 22px;
+            font-weight: 800;
+            color: #111827;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .logo-icon {
+            background-color: #2563eb;
+            color: white;
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-size: 18px;
+        }
+
+        .menu-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #9ca3af;
+            letter-spacing: 1px;
+            margin: 24px 24px 10px 24px;
+            font-weight: 700;
+        }
+
+        .nav-link-custom {
+            display: block;
+            padding: 12px 24px;
+            color: #64748b;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .nav-link-custom.active {
+            color: #2563eb;
+            background-color: #eff6ff;
+            border-right: 3px solid #2563eb;
+        }
+
+        .user-profile {
+            padding: 24px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .avatar {
+            width: 36px;
+            height: 36px;
+            background-color: #e2e8f0;
+            color: #475569;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        /* --- Main Content Area --- */
+        .main-content {
+            flex-grow: 1;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #2c2c2c;
+        }
+
+        .assessment-container {
+            background: #ffffff;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 1100px;
+            height: 85vh;
+            display: flex;
+            overflow: hidden;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+
+        /* --- Left Panel (Info & Progress) --- */
+        .info-panel {
+            width: 35%;
+            background-color: #fafafa;
+            border-right: 1px solid #e5e7eb;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 8px;
+            background-color: #e2e8f0;
+            border-radius: 4px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background-color: #2563eb;
+            width: 0%;
+            transition: width 0.4s ease;
+        }
+
+        .instructions-card {
+            background-color: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 30px;
+        }
+
+        /* --- Right Panel (Questions) --- */
+        .question-panel {
+            width: 65%;
+            padding: 50px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .question-step {
+            display: none;
+            flex-grow: 1;
+        }
+        .question-step.active {
+            display: block;
+            animation: fadeIn 0.4s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Custom Radio Card Styling */
+        .options-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .option-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 24px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: #475569;
+            font-weight: 500;
+        }
+
+        .option-card:hover {
+            border-color: #cbd5e1;
+            background-color: #f8fafc;
+        }
+
+        .option-card.selected {
+            border-color: #2563eb;
+            background-color: #eff6ff;
+            color: #1e40af;
+        }
+
+        .option-card input[type="radio"] {
+            display: none;
+        }
+
+        .radio-circle {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #cbd5e1;
+            border-radius: 50%;
+            display: inline-block;
+            position: relative;
+            flex-shrink: 0;
+            margin-left: 15px;
+        }
+
+        .option-card.selected .radio-circle {
+            border-color: #2563eb;
+        }
+        .option-card.selected .radio-circle::after {
+            content: '';
+            width: 10px;
+            height: 10px;
+            background-color: #2563eb;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        /* Navigation Footer */
+        .navigation-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: auto;
+            padding-top: 30px;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .btn-prev {
+            color: #94a3b8;
+            background: none;
+            border: none;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-prev:hover { color: #475569; }
+
+        .btn-next, .btn-submit {
+            background-color: #f1f5f9;
+            color: #64748b;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        
+        .btn-next.active, .btn-submit.active {
+            background-color: #2563eb;
+            color: white;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div>
+            <div class="logo-container">
+                <div class="logo-icon"><i class="bi bi-book"></i></div> StudentLID
+            </div>
+            
+            <div class="menu-label">Main Menu</div>
+            <a href="/dashboard" class="nav-link-custom">
+                <i class="bi bi-grid-1x2 me-2"></i> Dashboard
+            </a>
+            <a href="/assessment" class="nav-link-custom active">
+                <i class="bi bi-patch-question me-2"></i> Student Assessment
+            </a>
+        </div>
+        
+        <div class="user-profile">
+            <div class="avatar">{{ user.name[0] | upper if user.name else 'S' }}</div>
+            <div style="flex-grow: 1;">
+                <div style="font-size: 14px; font-weight: 700; color: #0f172a;">{{ user.name or 'Student' }}</div>
+                <div style="font-size: 12px; color: #64748b;">Student</div>
+            </div>
+            <a href="/auth/logout" class="text-muted" style="text-decoration: none; font-size: 18px;" title="Logout">
+                <i class="bi bi-box-arrow-right"></i>
+            </a>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <form id="assessmentForm" action="/assessment/submit" method="post" class="assessment-container">
+            
+            <div class="info-panel">
+                <h4 style="font-weight: 800; color: #0f172a; margin-bottom: 8px;">Learning Assessment</h4>
+                <p style="color: #64748b; font-size: 14px; margin-bottom: 40px;">Discover your unique learning style profile.</p>
+
+                <div class="d-flex justify-content-between align-items-end">
+                    <span style="font-size: 14px; font-weight: 600; color: #475569;" id="progressText">Question 1 of 8</span>
+                    <span style="font-size: 12px; color: #64748b;" id="progressPercentage">0%</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" id="progressBar"></div>
+                </div>
+
+                <div class="instructions-card">
+                    <div class="d-flex gap-2 align-items-center mb-2">
+                        <i class="bi bi-question-circle text-primary"></i>
+                        <h6 style="color: #1e40af; font-weight: 700; margin: 0;">Instructions</h6>
+                    </div>
+                    <p style="color: #2563eb; font-size: 13px; margin: 0; line-height: 1.5;">
+                        Choose the answer which best explains your preference. Click the box to select. You can change your answer before moving to the next question.
+                    </p>
+                </div>
+
+                <div style="margin-top: auto; color: #94a3b8; font-size: 13px; display: flex; align-items: center; gap: 8px;">
+                    <i class="bi bi-clock"></i> Est. time remaining: <span id="timeRemaining">5 mins</span>
+                </div>
+            </div>
+
+            <div class="question-panel">
+                
+                <div class="question-step active" data-step="1">
+                    <div style="color: #2563eb; font-size: 12px; font-weight: 700; letter-spacing: 1px; margin-bottom: 10px;">QUESTION 1 (VARK)</div>
+                    <h2 style="font-weight: 800; color: #0f172a; font-size: 26px; line-height: 1.3;">When learning a new complex game, which method do you find most effective?</h2>
+                    
+                    <div class="options-grid">
+                        <label class="option-card">
+                            Looking at diagrams, charts, or watching a video.
+                            <input type="radio" name="vark_1" value="Visual" required>
+                            <div class="radio-circle"></div>
+                        </label>
+                        <label class="option-card">
+                            Listening to someone explain the rules to me.
+                            <input type="radio" name="vark_1" value="Aural">
+                            <div class="radio-circle"></div>
+                        </label>
+                        <label class="option-card">
+                            Reading the rulebook or written instructions thoroughly.
+                            <input type="radio" name="vark_1" value="Read/Write">
+                            <div class="radio-circle"></div>
+                        </label>
+                        <label class="option-card">
+                            Just starting to play and figuring it out hands-on.
+                            <input type="radio" name="vark_1" value="Kinesthetic">
+                            <div class="radio-circle"></div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="question-step" data-step="2">
+                    <div style="color: #2563eb; font-size: 12px; font-weight: 700; letter-spacing: 1px; margin-bottom: 10px;">QUESTION 2 (VARK)</div>
+                    <h2 style="font-weight: 800; color: #0f172a; font-size: 26px; line-height: 1.3;">You need to give directions to a new place. You would generally:</h2>
+                    
+                    <div class="options-grid">
+                        <label class="option-card">
+                            Draw a map for them.
+                            <input type="radio" name="vark_2" value="Visual" required>
+                            <div class="radio-circle"></div>
+                        </label>
+                        <label class="option-card">
+                            Tell them the directions out loud.
+                            <input type="radio" name="vark_2" value="Aural">
+                            <div class="radio-circle"></div>
+                        </label>
+                        <label class="option-card">
+                            Write down a list of street names and turns.
+                            <input type="radio" name="vark_2" value="Read/Write">
+                            <div class="radio-circle"></div>
+                        </label>
+                        <label class="option-card">
+                            Go with them to show them the way.
+                            <input type="radio" name="vark_2" value="Kinesthetic">
+                            <div class="radio-circle"></div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="question-step" data-step="3">
+                    <div style="color: #2563eb; font-size: 12px; font-weight: 700; letter-spacing: 1px; margin-bottom: 10px;">QUESTION 3 (VARK)</div>
+                    <h2 style="font-weight: 800; color: #0f172a; font-size: 26px; line-height: 1.3;">You are planning a holiday for a group. You want some feedback on the plan. You would:</h2>
+                    
+                    <div class="options-grid">
+                        <label class="option-card">
+                            Show them photos and web pages.
+                            <input type="radio" name="vark_3" value="Visual" required>
+                            <div class="radio-circle"></div>
+                        </label>
+                        <label class="option-card">
+                            Discuss the plan with them in person or on a call.
+                            <input type="radio" name="vark_3" value="Aural">
+                            <div class="radio-circle"></div>
+                        </label>
+                        <label class="option-card">
+                            Give them the details in writing or via email.
+                            <input type="radio" name="vark_3" value="Read/Write">
+                            <div class="radio-circle"></div>
+                        </label>
+                        <label class="option-card">
+                            Describe some of the physical activities you will be doing.
+                            <input type="radio" name="vark_3" value="Kinesthetic">
+                            <div class="radio-circle"></div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="question-step" data-step="4">
+                    <div style="color: #2563eb; font-size: 12px; font-weight: 700; letter-spacing: 1px; margin-bottom: 10px;">QUESTION 4 (VARK)</div>
+                    <h2 style="font-weight: 800; color: #0f172a; font-size: 26px; line-height: 1.3;">You are about to buy a new digital camera or mobile phone. Other than price, what would most influence your decision?</h2>
+                    
+                    <div class="options-grid">
+                        <label class="option-card">
+                            It looks modern and the design is visually appealing.
+                            <input type="radio" name="vark_4" value="Visual" required>
+                            <div class="radio-circle"></div>
+                        </label>
+                        <label class="option-card">
+                            The salesperson discussing its features with me.
+                            <input type="radio" name="vark_4" value="Aural">
+                            <div class="radio-circle"></div>
+                        </label>
+                        <label class="option-card">
+                            Reading the detailed specs and reviews online.
+                            <input type="radio" name="vark_4" value="Read/Write">
+                            <div class="radio-circle"></div>
+                        </label>
+                        <label class="option-card">
+                            Holding it and testing out the buttons/screen.
+                            <input type="radio" name="vark_4" value="Kinesthetic">
+                            <div class="radio-circle"></div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="question-step" data-step="5">
+                    <div style="color: #2563eb; font-size: 12px; font-weight: 700; letter-spacing: 1px; margin-bottom: 10px;">QUESTION 5 (Honey & Mumford)</div>
+                    <h2 style="font-weight: 800; color: #0f172a; font-size: 26px; line-height: 1.3;">I often act without thinking deeply about the consequences.</h2>
+                    
+                    <div class="options-grid">
+                        <label class="option-card">
+                            Strongly Agree (I jump right into things).
+                            <input type="radio" name="hm_1" value="Activist" required>
+                            <div class="radio-circle"></div>
+                        </label>
+                        <label class="option-card">
+                            Disagree (I prefer to think things through).
+                            <input type="radio" name="hm_1" value="Reflector">
+                            <div class="radio-circle"></div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="question-step" data-step="6">
+                    <div style="color: #2563eb; font-size: 12px; font-weight: 700; letter-spacing: 1px; margin-bottom: 10px;">QUESTION 6 (Honey & Mumford)</div>
+                    <h2 style="font-weight: 800; color: #0f172a; font-size: 26px; line-height: 1.3;">I like to step back and ponder my experiences before acting.</h2>
+                    
+                    <div class="options-grid">
+                        <label class="option-card">
+                            Agree (I am naturally observant).
+                            <input type="radio" name="hm_2" value="Reflector" required>
+                            <div class="radio-circle"></div>
+                        </label>
+                        <label class="option-card">
+                            Disagree (I prefer constant action).
+                            <input type="radio" name="hm_2" value="Activist">
+                            <div class="radio-circle"></div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="question-step" data-step="7">
+                    <div style="color: #2563eb; font-size: 12px; font-weight: 700; letter-spacing: 1px; margin-bottom: 10px;">QUESTION 7 (Honey & Mumford)</div>
+                    <h2 style="font-weight: 800; color: #0f172a; font-size: 26px; line-height: 1.3;">When faced with a new concept, I always try to find the logical framework or theory behind it.</h2>
+                    
+                    <div class="options-grid">
+                        <label class="option-card">
+                            Agree (I look for the underlying logic).
+                            <input type="radio" name="hm_3" value="Theorist" required>
+                            <div class="radio-circle"></div>
+                        </label>
+                        <label class="option-card">
+                            Disagree (I just want to know if it works in practice).
+                            <input type="radio" name="hm_3" value="Pragmatist">
+                            <div class="radio-circle"></div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="question-step" data-step="8">
+                    <div style="color: #2563eb; font-size: 12px; font-weight: 700; letter-spacing: 1px; margin-bottom: 10px;">QUESTION 8 (Honey & Mumford)</div>
+                    <h2 style="font-weight: 800; color: #0f172a; font-size: 26px; line-height: 1.3;">When solving a problem, my first instinct is to...</h2>
+                    
+                    <div class="options-grid">
+                        <label class="option-card">
+                            Analyze how the different parts relate to each other.
+                            <input type="radio" name="hm_4" value="Theorist" required>
+                            <div class="radio-circle"></div>
+                        </label>
+                        <label class="option-card">
+                            Try out a practical solution immediately to see what happens.
+                            <input type="radio" name="hm_4" value="Pragmatist">
+                            <div class="radio-circle"></div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="navigation-footer">
+                    <button type="button" class="btn-prev" id="prevBtn" style="visibility: hidden;">
+                        <i class="bi bi-chevron-left"></i> Previous
+                    </button>
+                    
+                    <button type="button" class="btn-next" id="nextBtn" disabled>
+                        Next Question <i class="bi bi-chevron-right"></i>
+                    </button>
+                    
+                    <button type="submit" class="btn-submit d-none" id="submitBtn" disabled>
+                        Submit Assessment <i class="bi bi-check2-circle"></i>
+                    </button>
+                </div>
+
+            </div>
+        </form>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const steps = document.querySelectorAll('.question-step');
+            const prevBtn = document.getElementById('prevBtn');
+            const nextBtn = document.getElementById('nextBtn');
+            const submitBtn = document.getElementById('submitBtn');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            const progressPercentage = document.getElementById('progressPercentage');
+            const timeRemaining = document.getElementById('timeRemaining');
+            
+            let currentStepIndex = 0;
+            const totalSteps = steps.length;
+
+            // Handle Option Selection Styling
+            const optionCards = document.querySelectorAll('.option-card');
+            optionCards.forEach(card => {
+                card.addEventListener('click', function() {
+                    // Remove 'selected' from siblings
+                    const siblings = this.parentElement.querySelectorAll('.option-card');
+                    siblings.forEach(s => s.classList.remove('selected'));
+                    
+                    // Add 'selected' to clicked
+                    this.classList.add('selected');
+                    
+                    // Ensure the hidden radio is checked
+                    const radio = this.querySelector('input[type="radio"]');
+                    radio.checked = true;
+
+                    // Enable the Next/Submit button
+                    checkStepValidity();
+                });
+            });
+
+            function updateUI() {
+                // Show/Hide steps
+                steps.forEach((step, index) => {
+                    step.classList.toggle('active', index === currentStepIndex);
+                });
+
+                // Update Progress Bar
+                const progress = ((currentStepIndex + 1) / totalSteps) * 100;
+                progressBar.style.width = `${progress}%`;
+                progressText.innerText = `Question ${currentStepIndex + 1} of ${totalSteps}`;
+                progressPercentage.innerText = `${Math.round(progress)}%`;
+                
+                // Update Time Estimation (Mocked 30 seconds per question)
+                const minsLeft = Math.ceil(((totalSteps - currentStepIndex) * 30) / 60);
+                timeRemaining.innerText = `${minsLeft} min${minsLeft > 1 ? 's' : ''}`;
+
+                // Handle Buttons
+                prevBtn.style.visibility = currentStepIndex === 0 ? 'hidden' : 'visible';
+                
+                if (currentStepIndex === totalSteps - 1) {
+                    nextBtn.classList.add('d-none');
+                    submitBtn.classList.remove('d-none');
+                } else {
+                    nextBtn.classList.remove('d-none');
+                    submitBtn.classList.add('d-none');
+                }
+
+                checkStepValidity();
+            }
+
+            function checkStepValidity() {
+                const currentStepElement = steps[currentStepIndex];
+                const isSelected = currentStepElement.querySelector('input[type="radio"]:checked') !== null;
+                
+                if (isSelected) {
+                    nextBtn.disabled = false;
+                    nextBtn.classList.add('active');
+                    submitBtn.disabled = false;
+                    submitBtn.classList.add('active');
+                } else {
+                    nextBtn.disabled = true;
+                    nextBtn.classList.remove('active');
+                    submitBtn.disabled = true;
+                    submitBtn.classList.remove('active');
+                }
+            }
+
+            // Button Event Listeners
+            nextBtn.addEventListener('click', () => {
+                if (currentStepIndex < totalSteps - 1) {
+                    currentStepIndex++;
+                    updateUI();
+                }
+            });
+
+            prevBtn.addEventListener('click', () => {
+                if (currentStepIndex > 0) {
+                    currentStepIndex--;
+                    updateUI();
+                }
+            });
+
+            // Initialize UI
+            updateUI();
+        });
+    </script>
+</body>
+</html>

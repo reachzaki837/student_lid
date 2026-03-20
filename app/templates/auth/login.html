@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login | StudentLID</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        .login-container {
+            width: 100%;
+            max-width: 420px;
+            padding: 20px;
+        }
+
+        /* Logo Header */
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+
+        .logo-icon {
+            background-color: #2563eb;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 20px;
+        }
+
+        .logo-text {
+            font-size: 20px;
+            font-weight: 800;
+            color: #0f172a;
+        }
+
+        /* Typography */
+        h1 {
+            font-size: 32px;
+            font-weight: 800;
+            color: #0f172a;
+            margin-bottom: 8px;
+        }
+
+        p.subtitle {
+            color: #64748b;
+            font-size: 15px;
+            margin-bottom: 30px;
+        }
+
+        /* Custom Input Fields */
+        .form-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 6px;
+        }
+
+        .input-group-custom {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .input-group-custom i {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            font-size: 16px;
+        }
+
+        .input-group-custom input {
+            width: 100%;
+            padding: 12px 12px 12px 42px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 15px;
+            color: #0f172a;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .input-group-custom input::placeholder {
+            color: #94a3b8;
+        }
+
+        .input-group-custom input:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        /* Extra Links */
+        .extra-links {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            margin-bottom: 24px;
+        }
+
+        .extra-links span {
+            color: #64748b;
+            font-weight: 500;
+        }
+
+        .extra-links a {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .extra-links a:hover {
+            text-decoration: underline;
+        }
+
+        /* Submit Button */
+        .btn-submit {
+            background-color: #2563eb;
+            color: #ffffff;
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+            /* Beautiful glowing shadow */
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        .btn-submit:hover {
+            background-color: #1d4ed8;
+        }
+
+        .btn-submit:active {
+            transform: scale(0.98);
+        }
+
+        /* Register Footer */
+        .register-footer {
+            text-align: center;
+            margin-top: 30px;
+            font-size: 14px;
+            color: #64748b;
+        }
+
+        .register-footer a {
+            color: #2563eb;
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        .register-footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Error Alert */
+        .error-alert {
+            background-color: #fef2f2;
+            color: #ef4444;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 20px;
+            text-align: center;
+            border: 1px solid #fecaca;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="login-container">
+
+        {% if error %}
+        <div class="error-alert"><i class="bi bi-exclamation-circle me-1"></i> {{ error }}</div>
+        {% endif %}
+
+        <div class="logo-container">
+            <div class="logo-icon"><i class="bi bi-book"></i></div>
+            <div class="logo-text">StudentLID</div>
+        </div>
+
+        <h1>Welcome back</h1>
+        <p class="subtitle">Please enter your details to access your dashboard.</p>
+
+        <form action="/auth/login" method="post">
+
+            <div class="form-label">Email Address</div>
+            <div class="input-group-custom">
+                <i class="bi bi-envelope"></i>
+                <input type="email" name="email" placeholder="name@university.edu" required>
+            </div>
+
+            <div class="form-label">Password</div>
+            <div class="input-group-custom">
+                <i class="bi bi-lock"></i>
+                <input type="password" name="password" placeholder="••••••••" required>
+            </div>
+
+            <div class="extra-links">
+                <span>Remember me</span>
+                <a href="#">Forgot password?</a>
+            </div>
+
+            <button type="submit" class="btn-submit">
+                Sign In <i class="bi bi-arrow-right"></i>
+            </button>
+        </form>
+
+        <div class="register-footer">
+            Don't have an account? <a href="/auth/register">Register a new account</a>
+        </div>
+    </div>
+
+</body>
+
+</html>

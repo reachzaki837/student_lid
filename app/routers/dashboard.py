@@ -1,0 +1,253 @@
+import random
+import string
+from fastapi import APIRouter, Request, Depends, Cookie, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from app.core.security import jwt
+from app.core.config import settings
+from app.models.user import User, Assessment, Class, Enrollment
+from app.services.scoring import ScoringService
+
+router = APIRouter(tags=["dashboard"])
+templates = Jinja2Templates(directory="app/templates")
+
+
+def get_settings_feedback(request: Request) -> dict:
+    """Collect one-time settings status messages from query params."""
+    return {
+        "profile_success": request.query_params.get("profile_success"),
+        "profile_error": request.query_params.get("profile_error"),
+        "password_success": request.query_params.get("password_success"),
+        "password_error": request.query_params.get("password_error"),
+        "prefs_success": request.query_params.get("prefs_success"),
+        "prefs_error": request.query_params.get("prefs_error"),
+    }
+
+async def get_current_user(access_token: str = Cookie(None)):
+    if not access_token: return None
+    try:
+        payload = jwt.decode(access_token.replace("Bearer ", ""), settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        return await User.find_one(User.email == payload.get("sub"))
+    except (jwt.JWTError, KeyError, ValueError):
+        return None
+
+@router.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request, user: User = Depends(get_current_user)):
+    if not user: return RedirectResponse(url="/auth/login")
+
+    # STUDENT VIEW
+    if user.role == "student":
+        assessment = await Assessment.find_one(Assessment.user_email == user.email, sort=[("created_at", -1)])
+        recommendations = {}
+        if assessment:
+            vark = ScoringService.get_dominant_style(assessment.vark_scores)
+            hm = ScoringService.get_dominant_style(assessment.hm_scores)
+            recommendations = await ScoringService.get_study_recommendations(vark, hm)
+        
+        enrollments = await Enrollment.find(Enrollment.student_email == user.email).to_list()
+        classes = []
+        for e in enrollments:
+            cls = await Class.find_one(Class.code == e.class_code)
+            if cls: classes.append(cls)
+            
+        return templates.TemplateResponse("dashboard/student.html", {
+            "request": request, "user": user, "assessment": assessment, 
+            "recommendations": recommendations, "classes": classes
+        })
+    
+    # TEACHER VIEW
+    classes = await Class.find(Class.teacher_email == user.email).to_list()
+    
+    enrollments = []
+    for cls in classes:
+        cls_enrolls = await Enrollment.find(Enrollment.class_code == cls.code).to_list()
+        enrollments.extend(cls_enrolls)
+        
+    unique_emails = list(set([e.student_email for e in enrollments]))
+    
+    student_data = []
+    style_counts = {"Visual": 0, "Aural": 0, "Read/Write": 0, "Kinesthetic": 0}
+    
+    for email in unique_emails:
+        student = await User.find_one(User.email == email)
+        assessment = await Assessment.find_one(Assessment.user_email == email, sort=[("created_at", -1)])
+        
+        style_name = "Pending"
+        if assessment:
+            style_name = max(assessment.vark_scores, key=assessment.vark_scores.get) if assessment.vark_scores else "Unknown"
+            if style_name in style_counts:
+                style_counts[style_name] += 1
+                
+        student_data.append({
+            "name": student.name if student else "Unknown",
+            "email": email,
+            "style": style_name,
+            "vark_scores": assessment.vark_scores if assessment else {},
+            "hm_scores": assessment.hm_scores if assessment else {}
+        })
+
+    return templates.TemplateResponse("dashboard/teacher.html", {
+        "request": request, 
+        "user": user, 
+        "classes": classes,  
+        "active_classes": len(classes),
+        "total_students": len(unique_emails),
+        "student_data": student_data,
+        "style_counts": style_counts
+    })
+
+
+@router.get("/dashboard/settings", response_class=HTMLResponse)
+async def settings_page(request: Request, user: User = Depends(get_current_user)):
+    if not user:
+        return RedirectResponse(url="/auth/login")
+
+    return templates.TemplateResponse("dashboard/settings.html", {
+        "request": request,
+        "user": user,
+        "settings_feedback": get_settings_feedback(request)
+    })
+
+@router.post("/dashboard/create_class")
+async def create_class(name: str = Form(...), user: User = Depends(get_current_user)):
+    if not user or user.role != "teacher": return RedirectResponse(url="/auth/login")
+    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    await Class(name=name, code=code, teacher_email=user.email).insert()
+    return RedirectResponse(url="/dashboard", status_code=302)
+
+@router.post("/dashboard/join_class")
+async def join_class(request: Request, code: str = Form(...), user: User = Depends(get_current_user)):
+    if not user:
+        return RedirectResponse(url="/auth/login")
+    
+    cls = await Class.find_one(Class.code == code)
+    if not cls:
+        # Return error - class code not found
+        classes = await Class.find(Class.teacher_email == user.email).to_list() if user.role == "teacher" else []
+        return templates.TemplateResponse("dashboard/student.html", {
+            "request": request,
+            "user": user,
+            "error": "Invalid class code",
+            "classes": classes if user.role == "student" else None
+        })
+    
+    existing = await Enrollment.find_one(Enrollment.student_email == user.email, Enrollment.class_code == code)
+    if existing:
+        return RedirectResponse(url="/dashboard", status_code=302)
+    
+    await Enrollment(student_email=user.email, class_code=code).insert()
+    return RedirectResponse(url="/dashboard", status_code=302)
+
+@router.post("/dashboard/reset_assessment")
+async def reset_assessment(student_email: str = Form(...), user: User = Depends(get_current_user)):
+    if not user or user.role != "teacher": return RedirectResponse(url="/auth/login")
+    await Assessment.find(Assessment.user_email == student_email).delete()
+    return RedirectResponse(url="/dashboard", status_code=302)
+
+@router.post("/dashboard/remove_student")
+async def remove_student(student_email: str = Form(...), user: User = Depends(get_current_user)):
+    if not user or user.role != "teacher": return RedirectResponse(url="/auth/login")
+    classes = await Class.find(Class.teacher_email == user.email).to_list()
+    for code in [c.code for c in classes]:
+        await Enrollment.find(Enrollment.student_email == student_email, Enrollment.class_code == code).delete()
+    return RedirectResponse(url="/dashboard", status_code=302)
+
+@router.post("/dashboard/delete_class")
+async def delete_class(class_code: str = Form(...), user: User = Depends(get_current_user)):
+    if not user or user.role != "teacher": return RedirectResponse(url="/auth/login")
+    await Class.find(Class.code == class_code).delete()
+    await Enrollment.find(Enrollment.class_code == class_code).delete()
+    return RedirectResponse(url="/dashboard", status_code=302)
+
+# NEW ROUTE: Update Profile Settings
+@router.post("/dashboard/update_profile")
+async def update_profile(name: str = Form(...), user: User = Depends(get_current_user)):
+    if not user:
+        return RedirectResponse(url="/auth/login")
+
+    normalized_name = name.strip()
+    if not normalized_name:
+        return RedirectResponse(url="/dashboard/settings?profile_error=Display+name+cannot+be+empty", status_code=302)
+
+    user.name = normalized_name
+    await user.save()
+    return RedirectResponse(url="/dashboard/settings?profile_success=Profile+updated+successfully", status_code=302)
+
+
+@router.post("/dashboard/update_password")
+async def update_password(
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    user: User = Depends(get_current_user)
+):
+    if not user:
+        return RedirectResponse(url="/auth/login")
+
+    if user.password != current_password:
+        return RedirectResponse(url="/dashboard/settings?password_error=Current+password+is+incorrect", status_code=302)
+
+    if len(new_password) < 6:
+        return RedirectResponse(url="/dashboard/settings?password_error=New+password+must+be+at+least+6+characters", status_code=302)
+
+    if new_password != confirm_password:
+        return RedirectResponse(url="/dashboard/settings?password_error=New+password+and+confirm+password+must+match", status_code=302)
+
+    user.password = new_password
+    await user.save()
+    return RedirectResponse(url="/dashboard/settings?password_success=Password+updated+successfully", status_code=302)
+
+
+@router.post("/dashboard/update_preferences")
+async def update_preferences(
+    theme_mode: str = Form("light"),
+    notifications_enabled: str = Form("off"),
+    weekly_digest: str = Form("off"),
+    focus_mode: str = Form("off"),
+    user: User = Depends(get_current_user)
+):
+    if not user:
+        return RedirectResponse(url="/auth/login")
+
+    allowed_themes = {"light", "calm", "contrast"}
+    if theme_mode not in allowed_themes:
+        return RedirectResponse(url="/dashboard/settings?prefs_error=Invalid+theme+mode", status_code=302)
+
+    user.theme_mode = theme_mode
+    user.notifications_enabled = notifications_enabled == "on"
+    user.weekly_digest = weekly_digest == "on"
+    user.focus_mode = focus_mode == "on"
+    await user.save()
+    return RedirectResponse(url="/dashboard/settings?prefs_success=Preferences+saved", status_code=302)
+
+@router.post("/dashboard/chat")
+async def teacher_chat(request: Request, user: User = Depends(get_current_user)):
+    """Handles the AI Teaching Assistant Chatbot"""
+    if not user or user.role != "teacher": 
+        return {"error": "Unauthorized"}
+        
+    data = await request.json()
+    message = data.get("message", "")
+    
+    # 1. Dynamically calculate the live class stats
+    classes = await Class.find(Class.teacher_email == user.email).to_list()
+    enrollments = []
+    for cls in classes:
+        cls_enrolls = await Enrollment.find(Enrollment.class_code == cls.code).to_list()
+        enrollments.extend(cls_enrolls)
+        
+    unique_emails = list(set([e.student_email for e in enrollments]))
+    style_counts = {"Visual": 0, "Aural": 0, "Read/Write": 0, "Kinesthetic": 0}
+    
+    for email in unique_emails:
+        assessment = await Assessment.find_one(Assessment.user_email == email, sort=[("created_at", -1)])
+        if assessment and assessment.vark_scores:
+            style_name = max(assessment.vark_scores, key=assessment.vark_scores.get)
+            if style_name in style_counts:
+                style_counts[style_name] += 1
+                
+    stats_str = f"Total Students: {len(unique_emails)}. Learning Styles Breakdown -> Visual: {style_counts['Visual']}, Aural: {style_counts['Aural']}, Read/Write: {style_counts['Read/Write']}, Kinesthetic: {style_counts['Kinesthetic']}."
+    
+    # 2. Ask Groq for advice based on these stats
+    response = await ScoringService.get_teacher_chat_response(message, stats_str)
+    return {"response": response}

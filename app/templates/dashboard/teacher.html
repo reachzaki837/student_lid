@@ -836,13 +836,13 @@
                 const payload = {
                     exported_at: new Date().toISOString(),
                     teacher: "{{ user.name or 'Teacher' }}",
-                    total_students: {{ total_students }
-            },
-            active_classes: { { active_classes } },
-            students: rows
-        };
-        downloadFile(JSON.stringify(payload, null, 2), 'teacher_dashboard_report.json', 'application/json;charset=utf-8;');
-        return;
+                    total_students: {{ total_students }},
+                    active_classes: {{ active_classes }},
+                    students: rows
+                };
+                downloadFile(JSON.stringify(payload, null, 2), 'teacher_dashboard_report.json', 'application/json;charset=utf-8;');
+                return;
+
             }
 
         if (normalized === 'pdf') {

@@ -52,3 +52,13 @@ class Assessment(Document):
 
     class Settings:
         name = "assessments"
+
+class Material(Document):
+    uploader_email: str
+    filename: str
+    content_text: str = Field(default="")
+    graph_knowledge: dict = Field(default_factory=dict) # To store extracted graph concepts/relationships
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    class Settings:
+        name = "materials"

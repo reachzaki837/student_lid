@@ -1,6 +1,6 @@
 from beanie import init_beanie
 from app.core.config import settings
-from app.models.user import User, Assessment, Class, Enrollment
+from app.models.user import User, Assessment, Class, Enrollment, Material
 
 async def init_db():
     connection_string = settings.DATABASE_URL.rstrip("/")
@@ -13,6 +13,7 @@ async def init_db():
             User,
             Assessment,
             Class,
-            Enrollment
+            Enrollment,
+            Material
         ]
     )

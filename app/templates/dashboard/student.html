@@ -291,6 +291,9 @@
                 <a href="/assessment" class="nav-link-custom">
                     <i class="bi bi-patch-question me-2"></i> Take Assessment
                 </a>
+                <a href="/dashboard/tutor" class="nav-link-custom" style="color: #6366f1;">
+                    <i class="bi bi-robot me-2"></i> AI Study Tutor <span class="badge bg-primary ms-1" style="font-size:10px;">PRO</span>
+                </a>
                 <a href="/dashboard/settings" class="nav-link-custom">
                     <i class="bi bi-gear me-2"></i> Account Settings
                 </a>
@@ -325,32 +328,9 @@
         <div class="main-content">
             <h2 style="color: #0f172a; font-weight: 800; margin-bottom: 30px;">Student Dashboard</h2>
 
-            <div class="card-container mb-4" style="padding: 18px 20px;">
-                <h6 style="font-weight: 800; color: #0f172a; margin-bottom: 14px;">Academic Profile</h6>
-                <div class="row g-3">
-                    <div class="col-md-4">
-                        <div style="font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: 700;">
-                            Department</div>
-                        <div style="font-size: 14px; color: #0f172a; font-weight: 600;">{{ email_profile.department if
-                            email_profile else 'Unknown Department' }}</div>
-                    </div>
-                    <div class="col-md-4">
-                        <div style="font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: 700;">
-                            Degree</div>
-                        <div style="font-size: 14px; color: #0f172a; font-weight: 600;">{{ email_profile.degree if
-                            email_profile else 'N/A Degree' }}</div>
-                    </div>
-                    <div class="col-md-4">
-                        <div style="font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: 700;">
-                            Academic Progress</div>
-                        <div style="font-size: 14px; color: #0f172a; font-weight: 600;">{{
-                            email_profile.academic_progress if email_profile else 'N/A Progress' }}</div>
-                    </div>
-                </div>
-            </div>
 
             {% if assessment %}
-            <div class="persona-banner">
+            <div class="persona-banner mb-4">
                 <div>
                     <div style="font-size: 14px; text-transform: uppercase; font-weight: 600; opacity: 0.9;">Your
                         Unique Learning Persona</div>

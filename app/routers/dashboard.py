@@ -1,12 +1,14 @@
 import random
 import string
-from fastapi import APIRouter, Request, Depends, Cookie, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Request, Depends, Cookie, Form, UploadFile, File
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from app.core.security import jwt
 from app.core.config import settings
-from app.models.user import User, Assessment, Class, Enrollment
+from app.models.user import User, Assessment, Class, Enrollment, Material
 from app.services.scoring import ScoringService
+from app.services.agent import AgentService
+from app.services.rag import RAGService
 
 router = APIRouter(tags=["dashboard"])
 templates = Jinja2Templates(directory="app/templates")
@@ -272,5 +274,50 @@ async def teacher_chat(request: Request, user: User = Depends(get_current_user))
     stats_str = f"Total Students: {len(unique_emails)}. Learning Styles Breakdown -> Visual: {style_counts['Visual']}, Aural: {style_counts['Aural']}, Read/Write: {style_counts['Read/Write']}, Kinesthetic: {style_counts['Kinesthetic']}."
     
     # 2. Ask Groq for advice based on these stats
-    response = await ScoringService.get_teacher_chat_response(message, stats_str)
+    response = await AgentService.get_teacher_agent_response(message, stats_str)
+    return {"response": response}
+
+@router.post("/dashboard/upload_document")
+async def upload_document(file: UploadFile = File(...), user: User = Depends(get_current_user)):
+    """Uploads document for GraphRAG query ingestion."""
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Unauthorized"})
+    content = await file.read()
+    success = await RAGService.process_upload(content, file.filename, user.email)
+    if success:
+        return {"filename": file.filename, "status": "success"}
+    return JSONResponse(status_code=500, content={"error": "Failed to process document"})
+
+@router.get("/dashboard/tutor", response_class=HTMLResponse)
+async def student_tutor(request: Request, user: User = Depends(get_current_user)):
+    """Renders the dedicated Student AI Tutor page."""
+    if not user or user.role != "student":
+        return RedirectResponse(url="/auth/login")
+    
+    assessment = await Assessment.find_one(Assessment.user_email == user.email, sort=[("created_at", -1)])
+    if not assessment:
+        return RedirectResponse(url="/assessment")
+        
+    return templates.TemplateResponse(request, "dashboard/student_chat.html", {
+        "user": user, 
+        "assessment": assessment
+    })
+
+@router.post("/dashboard/chat_student")
+async def student_chat(request: Request, user: User = Depends(get_current_user)):
+    """Handles the specialized Student AI Tutor Chatbot logic using ReAct."""
+    if not user or user.role != "student": 
+        return {"error": "Unauthorized"}
+        
+    data = await request.json()
+    message = data.get("message", "")
+    
+    assessment = await Assessment.find_one(Assessment.user_email == user.email, sort=[("created_at", -1)])
+    vark_style = "Unknown"
+    hm_style = "Unknown"
+    if assessment:
+        vark_style = max(assessment.vark_scores, key=assessment.vark_scores.get)
+        hm_style = max(assessment.hm_scores, key=assessment.hm_scores.get)
+        
+    response = await AgentService.get_student_tutor_response(message, vark_style, hm_style)
     return {"response": response}

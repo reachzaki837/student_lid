@@ -1,5 +1,9 @@
-﻿venv/
+venv/
 .venv/
 __pycache__/
 *.pyc
 .env
+
+# AI Agent Configuration
+AGENTS.md
+.agents/

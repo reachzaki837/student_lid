@@ -37,6 +37,7 @@ async def dashboard(request: Request, user: User = Depends(get_current_user)):
 
     # STUDENT VIEW
     if user.role == "student":
+        email_profile = ScoringService.get_student_email_profile(user.email)
         assessment = await Assessment.find_one(Assessment.user_email == user.email, sort=[("created_at", -1)])
         recommendations = {}
         if assessment:
@@ -50,9 +51,10 @@ async def dashboard(request: Request, user: User = Depends(get_current_user)):
             cls = await Class.find_one(Class.code == e.class_code)
             if cls: classes.append(cls)
             
-        return templates.TemplateResponse("dashboard/student.html", {
-            "request": request, "user": user, "assessment": assessment, 
-            "recommendations": recommendations, "classes": classes
+        return templates.TemplateResponse(request, "dashboard/student.html", {
+            "user": user, "assessment": assessment, 
+            "recommendations": recommendations, "classes": classes,
+            "email_profile": email_profile
         })
     
     # TEACHER VIEW
@@ -71,6 +73,7 @@ async def dashboard(request: Request, user: User = Depends(get_current_user)):
     for email in unique_emails:
         student = await User.find_one(User.email == email)
         assessment = await Assessment.find_one(Assessment.user_email == email, sort=[("created_at", -1)])
+        email_profile = ScoringService.get_student_email_profile(email)
         
         style_name = "Pending"
         if assessment:
@@ -83,11 +86,13 @@ async def dashboard(request: Request, user: User = Depends(get_current_user)):
             "email": email,
             "style": style_name,
             "vark_scores": assessment.vark_scores if assessment else {},
-            "hm_scores": assessment.hm_scores if assessment else {}
+            "hm_scores": assessment.hm_scores if assessment else {},
+            "department": email_profile["department"],
+            "degree": email_profile["degree"],
+            "academic_progress": email_profile["academic_progress"]
         })
 
-    return templates.TemplateResponse("dashboard/teacher.html", {
-        "request": request, 
+    return templates.TemplateResponse(request, "dashboard/teacher.html", {
         "user": user, 
         "classes": classes,  
         "active_classes": len(classes),
@@ -102,10 +107,12 @@ async def settings_page(request: Request, user: User = Depends(get_current_user)
     if not user:
         return RedirectResponse(url="/auth/login")
 
-    return templates.TemplateResponse("dashboard/settings.html", {
-        "request": request,
+    email_profile = ScoringService.get_student_email_profile(user.email)
+
+    return templates.TemplateResponse(request, "dashboard/settings.html", {
         "user": user,
-        "settings_feedback": get_settings_feedback(request)
+        "settings_feedback": get_settings_feedback(request),
+        "email_profile": email_profile
     })
 
 @router.post("/dashboard/create_class")
@@ -122,13 +129,29 @@ async def join_class(request: Request, code: str = Form(...), user: User = Depen
     
     cls = await Class.find_one(Class.code == code)
     if not cls:
-        # Return error - class code not found
-        classes = await Class.find(Class.teacher_email == user.email).to_list() if user.role == "teacher" else []
-        return templates.TemplateResponse("dashboard/student.html", {
-            "request": request,
+        # Fetch the student's existing enrolled classes for the template
+        enrollments = await Enrollment.find(Enrollment.student_email == user.email).to_list()
+        classes = []
+        for e in enrollments:
+            enrolled_cls = await Class.find_one(Class.code == e.class_code)
+            if enrolled_cls:
+                classes.append(enrolled_cls)
+        
+        email_profile = ScoringService.get_student_email_profile(user.email)
+        assessment = await Assessment.find_one(Assessment.user_email == user.email, sort=[("created_at", -1)])
+        recommendations = {}
+        if assessment:
+            vark = ScoringService.get_dominant_style(assessment.vark_scores)
+            hm = ScoringService.get_dominant_style(assessment.hm_scores)
+            recommendations = await ScoringService.get_study_recommendations(vark, hm)
+
+        return templates.TemplateResponse(request, "dashboard/student.html", {
             "user": user,
             "error": "Invalid class code",
-            "classes": classes if user.role == "student" else None
+            "classes": classes,
+            "assessment": assessment,
+            "recommendations": recommendations,
+            "email_profile": email_profile
         })
     
     existing = await Enrollment.find_one(Enrollment.student_email == user.email, Enrollment.class_code == code)

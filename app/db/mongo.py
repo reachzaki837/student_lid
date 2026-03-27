@@ -1,13 +1,14 @@
-from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 from app.core.config import settings
 from app.models.user import User, Assessment, Class, Enrollment
 
 async def init_db():
-    client = AsyncIOMotorClient(settings.DATABASE_URL)
-    
+    connection_string = settings.DATABASE_URL.rstrip("/")
+    # Append the database name to the connection string
+    connection_string = f"{connection_string}/{settings.DATABASE_NAME}"
+
     await init_beanie(
-        database=client[settings.DATABASE_NAME],
+        connection_string=connection_string,
         document_models=[
             User,
             Assessment,

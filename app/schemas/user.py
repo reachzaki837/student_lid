@@ -13,9 +13,8 @@ class UserCreate(UserBase):
 
 # Properties to return to client (never return password!)
 class UserResponse(UserBase):
-    id: int
+    name: str = ""
     role: UserRole
-    is_google_user: bool
 
     class Config:
         from_attributes = True

@@ -561,6 +561,9 @@
                             <tr>
                                 <th>Student Name</th>
                                 <th>Email</th>
+                                <th>Department</th>
+                                <th>Degree</th>
+                                <th>Academic Progress</th>
                                 <th>Status / Badge</th>
                                 <th>Actions</th>
                             </tr>
@@ -570,6 +573,9 @@
                             <tr>
                                 <td style="font-weight: 600; color: #0f172a;">{{ student.name }}</td>
                                 <td style="color: #64748b;">{{ student.email }}</td>
+                                <td style="color: #334155;">{{ student.department }}</td>
+                                <td style="color: #334155;">{{ student.degree }}</td>
+                                <td style="color: #334155;">{{ student.academic_progress }}</td>
                                 <td>
                                     {% if student.style == 'Visual' %}<span
                                         class="badge-style badge-visual">Visual</span>
@@ -621,7 +627,7 @@
                             {% endfor %}
                             {% if not student_data %}
                             <tr>
-                                <td colspan="4" class="text-center text-muted py-5">No students have joined your classes
+                                <td colspan="7" class="text-center text-muted py-5">No students have joined your classes
                                     yet. Generate a class code on the left!</td>
                             </tr>
                             {% endif %}
@@ -842,40 +848,39 @@
                 };
                 downloadFile(JSON.stringify(payload, null, 2), 'teacher_dashboard_report.json', 'application/json;charset=utf-8;');
                 return;
-
             }
 
-        if (normalized === 'pdf') {
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF({ orientation: 'landscape' });
-            doc.setFontSize(16);
-            doc.text('Teacher Dashboard Report', 14, 16);
-            doc.setFontSize(10);
-            doc.text(`Teacher: {{ user.name or 'Teacher' }} | Total Students: {{ total_students }} | Active Classes: {{ active_classes }}`, 14, 24);
+            if (normalized === 'pdf') {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'landscape' });
+                doc.setFontSize(16);
+                doc.text('Teacher Dashboard Report', 14, 16);
+                doc.setFontSize(10);
+                doc.text(`Teacher: {{ user.name or 'Teacher' }} | Total Students: {{ total_students }} | Active Classes: {{ active_classes }}`, 14, 24);
 
-            const tableRows = rows.map(row => [
-                row.name,
-                row.email,
-                row.dominant_style,
-                row.visual_score,
-                row.aural_score,
-                row.read_write_score,
-                row.kinesthetic_score
-            ]);
+                const tableRows = rows.map(row => [
+                    row.name,
+                    row.email,
+                    row.dominant_style,
+                    row.visual_score,
+                    row.aural_score,
+                    row.read_write_score,
+                    row.kinesthetic_score
+                ]);
 
-            doc.autoTable({
-                startY: 30,
-                head: [["Name", "Email", "Dominant Style", "Visual", "Aural", "Read/Write", "Kinesthetic"]],
-                body: tableRows,
-                styles: { fontSize: 9 },
-                headStyles: { fillColor: [37, 99, 235] }
-            });
+                doc.autoTable({
+                    startY: 30,
+                    head: [["Name", "Email", "Dominant Style", "Visual", "Aural", "Read/Write", "Kinesthetic"]],
+                    body: tableRows,
+                    styles: { fontSize: 9 },
+                    headStyles: { fillColor: [37, 99, 235] }
+                });
 
-            doc.save('teacher_dashboard_report.pdf');
-            return;
-        }
+                doc.save('teacher_dashboard_report.pdf');
+                return;
+            }
 
-        alert('Unsupported export format.');
+            alert('Unsupported export format.');
         }
 
         // --- CHATBOT LOGIC ---

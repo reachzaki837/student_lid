@@ -1,5 +1,7 @@
 import os
 import json
+import re
+from datetime import datetime, timezone
 from groq import AsyncGroq, BadRequestError, APIConnectionError, APITimeoutError, RateLimitError, APIStatusError
 from typing import Dict, Any
 from dotenv import load_dotenv
@@ -10,7 +12,103 @@ GROQ_MODEL_CANDIDATES = [
     "llama-3.1-8b-instant",
 ]
 
+DEPARTMENT_BY_CODE = {
+    "ise": "Information Science and Engineering",
+    "cs": "Computer Science",
+    "ad": "Artificial Intelligence and Data Science",
+    "al": "Artificial Intelligence and Machine Learning",
+    "cd": "Computer Science and Design",
+    "ag": "Agricultural Engineering",
+    "bm": "Biomedical Engineering",
+    "bt": "Biotechnology",
+    "ce": "Civil Engineering",
+    "cb": "Computer Science and Business Systems",
+    "ct": "Computer Technology",
+    "ee": "Electrical and Electronics Engineering",
+    "ec": "Electronics and Communication Engineering",
+    "ei": "Electronics and Instrumentation Engineering",
+    "ft": "Fashion Technology",
+    "fd": "Food Technology",
+    "it": "Information Technology",
+    "me": "Mechanical Engineering",
+    "mz": "Mechatronics Engineering",
+    "tt": "Textile Technology",
+}
+
+BTECH_DEPARTMENTS = {
+    "Agricultural Engineering",
+    "Artificial Intelligence and Data Science",
+    "Biotechnology",
+}
+
+YEAR_LABELS = {
+    1: "I Year",
+    2: "II Year",
+    3: "III Year",
+    4: "IV Year",
+}
+
+DEPARTMENT_PATTERN = re.compile(
+    r"(" + "|".join(sorted(DEPARTMENT_BY_CODE.keys(), key=len, reverse=True)) + r")(\d{2})"
+)
+
 class ScoringService:
+    @staticmethod
+    def get_student_email_profile(email: str) -> Dict[str, Any]:
+        default_profile = {
+            "department_code": "N/A",
+            "department": "Unknown Department",
+            "degree": "N/A Degree",
+            "join_year": None,
+            "batch": "N/A Batch",
+            "study_year": "N/A",
+            "semester": "N/A",
+            "academic_progress": "N/A Progress",
+        }
+
+        if not email or "@" not in email:
+            return default_profile
+
+        local_part = email.split("@", 1)[0].lower()
+        matches = list(DEPARTMENT_PATTERN.finditer(local_part))
+        if not matches:
+            return default_profile
+
+        match = matches[-1]
+        department_code = match.group(1)
+        join_year = 2000 + int(match.group(2))
+        department = DEPARTMENT_BY_CODE.get(department_code, "Unknown Department")
+
+        degree_prefix = "B.Tech." if department in BTECH_DEPARTMENTS else "B.E."
+        degree = f"{degree_prefix} - {department}" if department != "Unknown Department" else "N/A Degree"
+
+        now = datetime.now(timezone.utc)
+        # Academic year runs Jul-Jun. Jan-Jun belongs to the previous academic year's even semester.
+        if now.month >= 7:
+            academic_year_offset = now.year - join_year
+            semester_number = academic_year_offset * 2 + 1  # odd sem (Jul-Dec)
+        else:
+            academic_year_offset = now.year - join_year - 1
+            semester_number = academic_year_offset * 2 + 2  # even sem (Jan-Jun)
+        semester_number = min(max(semester_number, 1), 8)
+        year_number = min(max(academic_year_offset + 1, 1), 4)
+
+        batch = f"{join_year}-{join_year + 4}"
+        study_year = YEAR_LABELS.get(year_number, "N/A")
+        semester = f"Sem {semester_number}"
+        academic_progress = f"{batch} | {study_year} | {semester}"
+
+        return {
+            "department_code": department_code.upper(),
+            "department": department,
+            "degree": degree,
+            "join_year": join_year,
+            "batch": batch,
+            "study_year": study_year,
+            "semester": semester,
+            "academic_progress": academic_progress,
+        }
+
     @staticmethod
     def calculate_vark(answers: Dict[str, str]) -> Dict[str, int]:
         scores = {"Visual": 0, "Aural": 0, "Read/Write": 0, "Kinesthetic": 0}

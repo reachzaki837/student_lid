@@ -240,6 +240,25 @@
                                 <label class="form-label">Email Address</label>
                                 <input type="email" class="form-control bg-light" value="{{ user.email }}" disabled>
                             </div>
+                            {% if user.role == 'student' %}
+                            <div class="mb-3">
+                                <label class="form-label">Department</label>
+                                <input type="text" class="form-control bg-light"
+                                    value="{{ email_profile.department if email_profile else 'Unknown Department' }}"
+                                    disabled>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Degree</label>
+                                <input type="text" class="form-control bg-light"
+                                    value="{{ email_profile.degree if email_profile else 'N/A Degree' }}" disabled>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Academic Progress</label>
+                                <input type="text" class="form-control bg-light"
+                                    value="{{ email_profile.academic_progress if email_profile else 'N/A Progress' }}"
+                                    disabled>
+                            </div>
+                            {% endif %}
                             <button type="submit" class="btn btn-primary px-4"
                                 style="border-radius: 10px; font-weight: 700;">Save Profile</button>
                         </form>

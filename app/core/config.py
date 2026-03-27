@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "mongodb://localhost:27017"
     DATABASE_NAME: str = "learning_app_db"
     GROQ_API_KEY: Optional[str] = None
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @field_validator("ALGORITHM", mode="before")

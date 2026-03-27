@@ -12,7 +12,7 @@ templates = Jinja2Templates(directory="app/templates")
 async def assessment_form(request: Request, user: User = Depends(get_current_user)):
     if not user:
         return RedirectResponse(url="/auth/login")
-    return templates.TemplateResponse("assessment/form.html", {"request": request, "user": user})
+    return templates.TemplateResponse(request, "assessment/form.html", {"user": user})
 
 @router.post("/submit")
 async def submit_assessment(request: Request, user: User = Depends(get_current_user)):

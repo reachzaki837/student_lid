@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     GROQ_API_KEY: Optional[str] = None
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
+    GMAIL_SENDER_EMAIL: Optional[str] = None
+    GMAIL_APP_PASSWORD: Optional[str] = None
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @field_validator("ALGORITHM", mode="before")

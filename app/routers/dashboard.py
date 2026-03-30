@@ -8,7 +8,16 @@ from app.core.config import settings
 from app.models.user import User, Assessment, Class, Enrollment, Material
 from app.services.scoring import ScoringService
 from app.services.agent import AgentService
+from pydantic import BaseModel
+from typing import List
+
+from app.services.email import send_class_email
 from app.services.rag import RAGService
+
+class EmailRequest(BaseModel):
+    recipients: List[str]
+    subject: str
+    message: str
 
 router = APIRouter(tags=["dashboard"])
 templates = Jinja2Templates(directory="app/templates")
@@ -63,9 +72,11 @@ async def dashboard(request: Request, user: User = Depends(get_current_user)):
     classes = await Class.find(Class.teacher_email == user.email).to_list()
     
     enrollments = []
+    class_enrollments = {}
     for cls in classes:
         cls_enrolls = await Enrollment.find(Enrollment.class_code == cls.code).to_list()
         enrollments.extend(cls_enrolls)
+        class_enrollments[cls.code] = [e.student_email for e in cls_enrolls]
         
     unique_emails = list(set([e.student_email for e in enrollments]))
     
@@ -94,13 +105,17 @@ async def dashboard(request: Request, user: User = Depends(get_current_user)):
             "academic_progress": email_profile["academic_progress"]
         })
 
+    all_students = await User.find(User.role == "student").to_list()
+
     return templates.TemplateResponse(request, "dashboard/teacher.html", {
         "user": user, 
         "classes": classes,  
         "active_classes": len(classes),
         "total_students": len(unique_emails),
         "student_data": student_data,
-        "style_counts": style_counts
+        "style_counts": style_counts,
+        "all_students": all_students,
+        "class_enrollments": class_enrollments
     })
 
 
@@ -161,6 +176,30 @@ async def join_class(request: Request, code: str = Form(...), user: User = Depen
         return RedirectResponse(url="/dashboard", status_code=302)
     
     await Enrollment(student_email=user.email, class_code=code).insert()
+    return RedirectResponse(url="/dashboard", status_code=302)
+
+@router.post("/dashboard/manual_enroll")
+async def manual_enroll(request: Request, user: User = Depends(get_current_user)):
+    if not user or user.role != "teacher":
+        return RedirectResponse(url="/auth/login")
+        
+    form_data = await request.form()
+    class_code = form_data.get("class_code")
+    student_emails = form_data.getlist("student_emails")
+    
+    if not class_code or not student_emails:
+        return RedirectResponse(url="/dashboard", status_code=302)
+        
+    # Verify teacher owns this class
+    cls = await Class.find_one(Class.code == class_code, Class.teacher_email == user.email)
+    if not cls:
+        return RedirectResponse(url="/dashboard", status_code=302)
+        
+    for email in student_emails:
+        existing = await Enrollment.find_one(Enrollment.student_email == email, Enrollment.class_code == class_code)
+        if not existing:
+            await Enrollment(student_email=email, class_code=class_code).insert()
+            
     return RedirectResponse(url="/dashboard", status_code=302)
 
 @router.post("/dashboard/reset_assessment")
@@ -321,3 +360,16 @@ async def student_chat(request: Request, user: User = Depends(get_current_user))
         
     response = await AgentService.get_student_tutor_response(message, vark_style, hm_style)
     return {"response": response}
+
+@router.post("/dashboard/send_email")
+async def send_teacher_email(request: EmailRequest, user: User = Depends(get_current_user)):
+    """Handles dispatching emails to students using Gmail SMTP in a background thread."""
+    if not user or user.role != "teacher":
+        return JSONResponse(status_code=401, content={"error": "Unauthorized"})
+    
+    success = await send_class_email(request.recipients, request.subject, request.message)
+    
+    if success:
+        return {"status": "success", "message": f"Successfully dispatched email to {len(request.recipients)} students."}
+    else:
+        return JSONResponse(status_code=500, content={"error": "Failed to dispatch email. Check server configuration and App Password."})

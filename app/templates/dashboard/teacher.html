@@ -557,7 +557,12 @@
                 </div>
 
                 <div class="card-container mb-5">
-                    <h5 style="color: #0f172a; font-weight: 800; margin-bottom: 24px;">Students</h5>
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h5 style="color: #0f172a; font-weight: 800; margin-bottom: 0;">Students</h5>
+                        <button class="btn border shadow-sm" style="border-radius: 8px; font-weight: 600; color: #0f172a; background-color: #f8fafc;" data-bs-toggle="modal" data-bs-target="#emailModal">
+                            <i class="bi bi-envelope-paper-fill me-2 text-primary"></i> Compose Email
+                        </button>
+                    </div>
                     <table class="table table-borderless table-hover">
                         <thead>
                             <tr>
@@ -658,7 +663,12 @@
                     </div>
                     <div class="col-md-8">
                         <div class="card-container" style="margin-bottom: 0;">
-                            <h5 style="color: #0f172a; font-weight: 700; margin-bottom: 20px;">Active Classes</h5>
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 style="color: #0f172a; font-weight: 700; margin-bottom: 0;">Active Classes</h5>
+                                <button class="btn btn-sm shadow-sm" style="border-radius: 8px; font-weight: 600; background-color: #f8fafc; color: #0f172a; border: 1px solid #e2e8f0;" data-bs-toggle="modal" data-bs-target="#enrollStudentModal">
+                                    <i class="bi bi-person-plus-fill me-1 text-primary"></i> Add Students
+                                </button>
+                            </div>
                             <table class="table table-borderless align-middle">
                                 <thead style="border-bottom: 1px solid #e2e8f0;">
                                     <tr>
@@ -1161,6 +1171,247 @@
             document.getElementById('modalScoresArea').innerHTML = html;
             new bootstrap.Modal(document.getElementById('studentDetailModal')).show();
         }
+
+        // Email Modal Logic
+        function toggleStudentList(show) {
+            const list = document.getElementById('studentChecklist');
+            if (show) {
+                list.classList.remove('d-none');
+            } else {
+                list.classList.add('d-none');
+            }
+        }
+
+        function filterStudents() {
+            let input = document.getElementById('studentSearchInput');
+            let filter = input.value.toLowerCase();
+            let items = document.querySelectorAll('.student-item');
+
+            items.forEach(item => {
+                let name = item.querySelector('.form-check-label').textContent.toLowerCase();
+                if (name.includes(filter)) {
+                    item.style.setProperty('display', '', 'important');
+                } else {
+                    item.style.setProperty('display', 'none', 'important');
+                }
+            });
+        }
+
+        // composeEmailForm logic moved to bottom
+    </script>
+
+    <!-- Email Modal -->
+    <div class="modal fade" id="emailModal" tabindex="-1" aria-labelledby="emailModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="border-radius: 16px; border: none;">
+                <div class="modal-header" style="border-bottom: 1px solid #e2e8f0; padding: 20px 24px;">
+                    <h5 class="modal-title" id="emailModalLabel" style="font-weight: 800; color: #0f172a;">Message Class</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" style="padding: 24px;">
+                    <form id="composeEmailForm">
+                        <div class="mb-4">
+                            <label class="form-label" style="font-weight: 700; color: #475569;">To:</label>
+                            <div class="d-flex gap-4 mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="recipientOptions" id="entireClassOption" value="all" checked onchange="toggleStudentList(false)" style="cursor:pointer;">
+                                    <label class="form-check-label" for="entireClassOption" style="color: #0f172a; font-weight: 600; cursor:pointer;">
+                                        Entire Class
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="recipientOptions" id="specificStudentsOption" value="specific" onchange="toggleStudentList(true)" style="cursor:pointer;">
+                                    <label class="form-check-label" for="specificStudentsOption" style="color: #0f172a; font-weight: 600; cursor:pointer;">
+                                        Specific Students
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div id="studentChecklist" class="border rounded p-3 d-none shadow-sm" style="background-color: #f8fafc; border-color: #e2e8f0 !important;">
+                                <div class="mb-3 position-relative">
+                                    <i class="bi bi-search position-absolute" style="top: 50%; transform: translateY(-50%); left: 12px; color: #94a3b8;"></i>
+                                    <input type="text" class="form-control shadow-sm" id="studentSearchInput" onkeyup="filterStudents()" placeholder="Search students by name or email..." style="border-radius: 8px; border-color: #e2e8f0; padding-left: 36px; font-size: 14px;">
+                                </div>
+                                <div style="max-height: 220px; overflow-y: auto;">
+                                    {% for student in student_data %}
+                                    <div class="form-check mb-2 student-item">
+                                        <input class="form-check-input student-checkbox" type="checkbox" value="{{ student.email }}" id="target-{{ loop.index }}" style="cursor:pointer;">
+                                        <label class="form-check-label d-flex justify-content-between" for="target-{{ loop.index }}" style="font-size: 14px; color: #334155; cursor:pointer; width: 100%;">
+                                            <span style="font-weight: 600;">{{ student.name }}</span> <span class="text-muted" style="font-size: 13px;">{{ student.email }}</span>
+                                        </label>
+                                    </div>
+                                    {% endfor %}
+                                    {% if not student_data %}
+                                    <p class="text-muted text-center mb-0 mt-2" style="font-size: 14px;">No students enrolled yet.</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="emailSubject" class="form-label" style="font-weight: 700; color: #475569;">Subject</label>
+                            <input type="text" class="form-control shadow-sm" id="emailSubject" required placeholder="Important update for class..." style="border-radius: 8px; border-color: #e2e8f0;">
+                        </div>
+
+                        <div class="mb-4">
+                            <label for="emailBody" class="form-label" style="font-weight: 700; color: #475569;">Message</label>
+                            <textarea class="form-control shadow-sm" id="emailBody" rows="5" required placeholder="Type your message here..." style="border-radius: 8px; border-color: #e2e8f0;"></textarea>
+                        </div>
+
+                        <div class="d-flex justify-content-end gap-2">
+                            <button type="button" class="btn btn-light" data-bs-dismiss="modal" style="border-radius: 8px; font-weight: 600; border: 1px solid #e2e8f0; color: #475569;">Cancel</button>
+                            <button type="submit" class="btn shadow-sm text-white" id="sendEmailBtn" style="border-radius: 8px; font-weight: 600; background-color: #3b82f6;">
+                                <i class="bi bi-send-fill me-1"></i> Send
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Enroll Student Modal -->
+    <div class="modal fade" id="enrollStudentModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="border-radius: 16px; border: none;">
+                <div class="modal-header" style="border-bottom: 1px solid #e2e8f0; padding: 20px 24px;">
+                    <h5 class="modal-title" style="font-weight: 800; color: #0f172a;"><i class="bi bi-person-plus-fill me-2 text-primary"></i> Enroll Students</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" style="padding: 24px;">
+                    <form action="/dashboard/manual_enroll" method="post">
+                        <div class="mb-4">
+                            <label class="form-label" style="font-weight: 700; color: #475569;">Select Class</label>
+                            <select name="class_code" class="form-select shadow-sm" style="border-radius: 8px; border-color: #e2e8f0;" required>
+                                <option value="" disabled selected>Choose a class...</option>
+                                {% for cls in classes %}
+                                <option value="{{ cls.code }}">{{ cls.name }} ({{ cls.code }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label" style="font-weight: 700; color: #475569;">Select Students</label>
+                            <div class="border rounded p-3 shadow-sm" style="background-color: #f8fafc; border-color: #e2e8f0 !important;">
+                                <div style="max-height: 220px; overflow-y: auto;">
+                                    {% for stud in all_students %}
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="student_emails" value="{{ stud.email }}" id="enroll-stud-{{ loop.index }}" style="cursor:pointer;">
+                                        <label class="form-check-label d-flex justify-content-between" for="enroll-stud-{{ loop.index }}" style="font-size: 14px; color: #334155; cursor:pointer; width: 100%;">
+                                            <span style="font-weight: 600;">{{ stud.name }}</span> <span class="text-muted" style="font-size: 13px;">{{ stud.email }}</span>
+                                        </label>
+                                    </div>
+                                    {% endfor %}
+                                    {% if not all_students %}
+                                    <p class="text-muted text-center mb-0 mt-2" style="font-size: 14px;">No registered students found in database.</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-end gap-2">
+                            <button type="button" class="btn btn-light" data-bs-dismiss="modal" style="border-radius: 8px; font-weight: 600; border: 1px solid #e2e8f0; color: #475569;">Cancel</button>
+                            <button type="submit" class="btn shadow-sm text-white" style="border-radius: 8px; font-weight: 600; background-color: #3b82f6;">
+                                Enroll Selected
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // composeEmailForm Logic moved here so DOM element exists
+        document.addEventListener('DOMContentLoaded', function() {
+            const emailForm = document.getElementById('composeEmailForm');
+            if (emailForm) {
+                emailForm.addEventListener('submit', async function(e) {
+                    e.preventDefault();
+                    const btn = document.getElementById('sendEmailBtn');
+                    const originalText = btn.innerHTML;
+                    
+                    const option = document.querySelector('input[name="recipientOptions"]:checked').value;
+                    let recipients = [];
+                    
+                    if (option === 'specific') {
+                        document.querySelectorAll('.student-checkbox:checked').forEach(cb => recipients.push(cb.value));
+                        if (recipients.length === 0) { alert('Please select at least one student.'); return; }
+                    } else {
+                        document.querySelectorAll('.student-checkbox').forEach(cb => recipients.push(cb.value));
+                        if (recipients.length === 0) { alert('No students found in the class.'); return; }
+                    }
+
+                    const subject = document.getElementById('emailSubject').value;
+                    const message = document.getElementById('emailBody').value;
+
+                    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Sending...';
+                    btn.disabled = true;
+
+                    try {
+                        const response = await fetch('/dashboard/send_email', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                recipients: recipients,
+                                subject: subject,
+                                message: message
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (response.ok && data.status === "success") {
+                            bootstrap.Modal.getInstance(document.getElementById('emailModal')).hide();
+                            alert(data.message);
+                            document.getElementById('composeEmailForm').reset();
+                            toggleStudentList(false);
+                        } else {
+                            alert("Error: " + (data.error || "Failed to dispatch email."));
+                        }
+                    } catch (error) {
+                        console.error("Email API Error:", error);
+                        alert("Network error occurred while trying to send the email.");
+                    } finally {
+                        btn.innerHTML = originalText;
+                        btn.disabled = false;
+                    }
+                });
+            }
+
+            // Student Enrollment Logic
+            const classEnrollments = {{ class_enrollments | tojson | safe }};
+            const classSelect = document.querySelector('select[name="class_code"]');
+            
+            if (classSelect) {
+                classSelect.addEventListener('change', function(e) {
+                    const selectedClass = e.target.value;
+                    const enrolledEmails = classEnrollments[selectedClass] || [];
+                    
+                    document.querySelectorAll('input[name="student_emails"]').forEach(checkbox => {
+                        const label = checkbox.nextElementSibling;
+                        if (enrolledEmails.includes(checkbox.value)) {
+                            checkbox.checked = true;
+                            checkbox.disabled = true;
+                            label.style.opacity = '0.5';
+                            // Add badge if not exists
+                            if (!label.querySelector('.enrolled-badge')) {
+                                const badge = document.createElement('span');
+                                badge.className = 'enrolled-badge badge bg-secondary ms-2';
+                                badge.style.fontSize = '10px';
+                                badge.innerText = 'Already Enrolled';
+                                label.appendChild(badge);
+                            }
+                        } else {
+                            checkbox.disabled = false;
+                            checkbox.checked = false;
+                            label.style.opacity = '1';
+                            // Remove badge
+                            const badge = label.querySelector('.enrolled-badge');
+                            if (badge) badge.remove();
+                        }
+                    });
+                });
+            }
+        });
     </script>
 </body>
 

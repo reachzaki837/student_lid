@@ -37,4 +37,4 @@ app.include_router(assessment.router)
 
 @app.get("/")
 async def root():
-    return RedirectResponse(url="/auth/login")
+    return RedirectResponse(url="/auth/login")

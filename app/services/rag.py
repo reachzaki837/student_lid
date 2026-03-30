@@ -10,8 +10,8 @@ from langchain_core.documents import Document as LangchainDocument
 from app.models.user import Material
 from app.core.config import settings
 
-# We will store the local FAISS index in the app directory for simplicity
-INDEX_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "faiss_index")
+# Vercel serverless functions strictly only allow writing to the /tmp directory.
+INDEX_DIR = "/tmp/faiss_index"
 os.makedirs(INDEX_DIR, exist_ok=True)
 
 # Google Gemini Embeddings (API-based, lightweight deployment)

@@ -313,7 +313,7 @@ async def teacher_chat(request: Request, user: User = Depends(get_current_user))
     stats_str = f"Total Students: {len(unique_emails)}. Learning Styles Breakdown -> Visual: {style_counts['Visual']}, Aural: {style_counts['Aural']}, Read/Write: {style_counts['Read/Write']}, Kinesthetic: {style_counts['Kinesthetic']}."
     
     # 2. Ask Groq for advice based on these stats
-    response = await AgentService.get_teacher_agent_response(message, stats_str)
+    response = await AgentService.get_teacher_agent_response(message, stats_str, user.name, user.email)
     return {"response": response}
 
 @router.post("/dashboard/upload_document")

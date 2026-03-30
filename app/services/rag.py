@@ -4,17 +4,19 @@ import networkx as nx
 from typing import List, Dict, Any
 from PyPDF2 import PdfReader
 from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document as LangchainDocument
 from app.models.user import Material
+from app.core.config import settings
 
 # We will store the local FAISS index in the app directory for simplicity
 INDEX_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "faiss_index")
 os.makedirs(INDEX_DIR, exist_ok=True)
 
-# Local Free Embeddings (runs on CPU fast)
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+# Google Gemini Embeddings (API-based, lightweight deployment)
+# Important: This avoids the massive ~5GB sentence-transformers dependency for Vercel.
+embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=settings.GOOGLE_API_KEY)
 
 class RAGService:
     @staticmethod

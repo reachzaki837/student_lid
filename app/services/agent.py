@@ -114,7 +114,8 @@ class AgentService:
                     "Be thorough, structured, and pedagogically sound.\n\n"
                     "Rules:\n"
                     "1. If the teacher just says hi, hello, or asks a generic conversational question, reply directly to them warmly. Do NOT attempt to use tools for simple greetings.\n"
-                    "2. Only use search tools when you explicitly need course context or external research to answer the teacher's question."
+                    "2. Only use search tools when you explicitly need course context or external research to answer the teacher's question.\n"
+                    "3. If the teacher asks you to draft an email or write a document, ALWAYS provide a drafted template immediately. Do not stubbornly refuse or demand more context; just use placeholders like [Student Name] or [Specific Topic]."
                 )),
                 ("human", "{input}"),
                 ("placeholder", "{agent_scratchpad}"),

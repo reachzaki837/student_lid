@@ -1,20 +1,20 @@
 import os
-from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_classic.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
 from app.services.rag import RAGService
 
 
-# Initialize Groq Model
+# Initialize Google Gemini Model
 def get_llm():
-    api_key = os.getenv("GROQ_API_KEY")
+    api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        raise ValueError("GROQ_API_KEY is missing from environment")
-    return ChatGroq(
+        raise ValueError("GOOGLE_API_KEY is missing from environment")
+    return ChatGoogleGenerativeAI(
         temperature=0,
-        model_name="llama-3.3-70b-versatile",
-        groq_api_key=api_key,
+        model="gemini-3.1-pro-preview",
+        google_api_key=api_key,
     )
 
 
@@ -173,20 +173,15 @@ class AgentService:
 
             prompt = ChatPromptTemplate.from_messages([
                 ("system", (
-                    "You are a world-class Pedagogical Researcher and AI Teaching Assistant.\n"
-                    "Instructor: {teacher_name} ({teacher_email})\n\n"
-                    "CORE INSTRUCTION: You MUST use your tools (search_web, search_youtube, search_uploaded_course_materials) for EVERY user query, no matter how simple. Do not answer from memory. Gather fresh data first.\n\n"
-                    "CONTEXT (Live Class Stats):\n{stats}\n\n"
-                    "GOAL: Provide 'Perplexity-style' deep research. When asked for information or lesson help:\n"
-                    "1. SEARCH EVERYTHING: Search the web, course files, and YouTube for every query.\n"
-                    "2. STRUCTURED REPORTING: Use clear H1/H2 headers, bold text, and numbered lists.\n"
-                    "3. CITATIONS: Cite sources like [Source Name](link) at the end of paragraphs.\n"
-                    "4. VIDEO INTEGRATION: Always include a '### Recommended Videos' section.\n\n"
-                    "Rules:\n"
-                    "- Be professional and academically rigorous.\n"
-                    "- If drafting emails, use placeholders or send them if asked."
-                    "- Only reply directly for simple greetings (hi/hello).\n"
-                    "- For any other topic, USE TOOLS FIRST."
+                    "You are a world-class educational research assistant for {teacher_name} ({teacher_email}).\n"
+                    "Your mission is to provide deep, Perplexity-style classroom insights using every tool in your belt.\n\n"
+                    "INSTRUCTIONS:\n"
+                    "1. For any conceptual or research question, ALWAYS use search_web, search_youtube, and search_uploaded_course_materials to gather data first.\n"
+                    "2. Use stats to personalize advice: {stats}\n"
+                    "3. Format your final report with clear H1/H2 headers, bold text, and numbered lists.\n"
+                    "4. Include '### Recommended Videos' at the end of research answers.\n"
+                    "5. Cite web sources directly: [Source](URL).\n\n"
+                    "Rules: Only respond directly to greetings like 'hi' or 'hello'. For all other requests, you MUST trigger your search tools."
                 )),
                 ("human", "{input}"),
                 ("placeholder", "{agent_scratchpad}"),

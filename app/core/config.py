@@ -5,7 +5,7 @@ import os
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Student Learning Style Identification System"
-    SECRET_KEY: str = "CHANGE_THIS_TO_A_SECURE_RANDOM_STRING"
+    SECRET_KEY: str = "BfeFGb4osPnvAbW-Ol_ORGQr1njHV2AR4s5lqRGXNKmfVFhr7jlbF2DTMCSUcEUDoXWnJz4YbFA-cXECCDyx9w"
     ENVIRONMENT: str = "development"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30

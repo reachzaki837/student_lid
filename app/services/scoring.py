@@ -263,3 +263,4 @@ class ScoringService:
             return chat_completion.choices[0].message.content
         except (ConnectionError, ValueError, KeyError, APIConnectionError, APITimeoutError, RateLimitError, APIStatusError, BadRequestError) as e:
             return f"AI Generation failed: {e}"
+

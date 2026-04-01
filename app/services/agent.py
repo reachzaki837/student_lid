@@ -1,21 +1,55 @@
 import os
+import logging
+from typing import Optional
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langchain_classic.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
 from app.services.rag import RAGService
 
+logger = logging.getLogger(__name__)
+
 
 # Initialize Google Gemini Model
-def get_llm():
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        raise ValueError("GOOGLE_API_KEY is missing from environment")
-    return ChatGoogleGenerativeAI(
-        temperature=0,
-        model="gemini-3.1-pro-preview",
-        google_api_key=api_key,
-    )
+def get_llm(force_provider: Optional[str] = None) -> object:
+    if force_provider == "google":
+        google_api_key: Optional[str] = os.getenv("GOOGLE_API_KEY")
+        if google_api_key:
+            return ChatGoogleGenerativeAI(
+                temperature=0,
+                model="gemini-2.5-flash",
+                google_api_key=google_api_key,
+            )
+        raise ValueError("GOOGLE_API_KEY must be configured for Google provider")
+
+    if force_provider == "groq":
+        groq_api_key: Optional[str] = os.getenv("GROQ_API_KEY")
+        if groq_api_key:
+            return ChatGroq(
+                temperature=0,
+                model="llama-3.3-70b-versatile",
+                api_key=groq_api_key,
+            )
+        raise ValueError("GROQ_API_KEY must be configured for Groq provider")
+
+    google_api_key: Optional[str] = os.getenv("GOOGLE_API_KEY")
+    if google_api_key:
+        return ChatGoogleGenerativeAI(
+            temperature=0,
+            model="gemini-2.5-flash",
+            google_api_key=google_api_key,
+        )
+
+    groq_api_key: Optional[str] = os.getenv("GROQ_API_KEY")
+    if groq_api_key:
+        return ChatGroq(
+            temperature=0,
+            model="llama-3.3-70b-versatile",
+            api_key=groq_api_key,
+        )
+
+    raise ValueError("Either GOOGLE_API_KEY or GROQ_API_KEY must be configured")
 
 
 # ----- TOOLS -----
@@ -25,9 +59,8 @@ def search_web(query: str) -> str:
     """Search the internet for real-time information, facts, research, or any topic the student asks about."""
     try:
         from ddgs import DDGS
-        import requests
-        from bs4 import BeautifulSoup
-        
+        from ddgs.exceptions import DDGSException, RatelimitException, TimeoutException
+
         results = []
         with DDGS() as ddgs:
             for r in ddgs.text(query, max_results=3):
@@ -37,34 +70,24 @@ def search_web(query: str) -> str:
             return "No search results found for the query."
             
         output_parts = []
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124 Safari/537.36"
-        }
-        
+
         for r in results:
             title = r.get("title", "No title")
             snippet = r.get("body", "")
             href = r.get("href", "")
-            
-            scraped_text = ""
-            try:
-                resp = requests.get(href, headers=headers, timeout=4)
-                if resp.status_code == 200:
-                    soup = BeautifulSoup(resp.text, "html.parser")
-                    for tag in soup(["script", "style", "nav", "footer", "header", "noscript"]):
-                        tag.decompose()
-                    text = soup.get_text(separator=' ', strip=True)
-                    scraped_text = text[:1500] + ("..." if len(text) > 1500 else "")
-            except Exception:
-                pass
-                
+
             entry = f"Title: {title}\nURL: {href}\nSnippet: {snippet}\n"
-            if scraped_text:
-                entry += f"Scraped Page Content: {scraped_text}\n"
             output_parts.append(entry)
             
         return "\n\n---\n\n".join(output_parts)
-    except Exception as e:
+    except (RatelimitException, TimeoutException) as e:
+        logger.warning("Web search temporarily unavailable: %s", e)
+        return "Web search is temporarily unavailable. Please try again in a minute."
+    except DDGSException as e:
+        logger.info("Web search returned no usable results: %s", e)
+        return "No web search results were found for this query."
+    except (ImportError, RuntimeError, ValueError) as e:
+        logger.exception("Web search tool failed")
         return f"Web search error: {str(e)}"
 
 
@@ -73,6 +96,7 @@ def search_youtube(query: str) -> str:
     """Search for educational YouTube videos related to the topic. Returns titles and links."""
     try:
         from ddgs import DDGS
+        from ddgs.exceptions import DDGSException, RatelimitException, TimeoutException
         results = []
         with DDGS() as ddgs:
             # Use 'videos' method from ddgs to find YouTube content
@@ -90,7 +114,14 @@ def search_youtube(query: str) -> str:
             output_parts.append(f"**{title}**\nLink: {link}\n{description}")
             
         return "\n\n---\n\n".join(output_parts)
-    except Exception as e:
+    except (RatelimitException, TimeoutException) as e:
+        logger.warning("YouTube search temporarily unavailable: %s", e)
+        return "YouTube search is temporarily unavailable. Please try again in a minute."
+    except DDGSException as e:
+        logger.info("YouTube search returned no usable results: %s", e)
+        return "No relevant YouTube videos were found for this topic."
+    except (ImportError, RuntimeError, ValueError) as e:
+        logger.exception("YouTube search tool failed")
         return f"YouTube search error: {str(e)}"
 
 
@@ -107,62 +138,74 @@ def send_email_to_student(recipient_email: str, subject: str, message_body: str)
             return f"Successfully sent the email with subject '{subject}' to {recipient_email}."
         else:
             return f"Failed to send email to {recipient_email}. Ensure SMTP credentials are configured."
-    except Exception as e:
+    except (ImportError, RuntimeError, ValueError) as e:
+        logger.exception("Email tool failed")
         return f"Email dispatch error: {str(e)}"
 
 
 @tool
 def search_uploaded_course_materials(query: str) -> str:
-    """Search internal uploaded course documents, PDFs, and curriculum materials for relevant content."""
+    """Search internal uploaded course materials (PDFs, text files, and analyzed images) for relevant content."""
     try:
         return RAGService.query_documents(query)
-    except Exception as e:
+    except (RuntimeError, ValueError) as e:
+        logger.exception("Course material search failed")
         return f"Course material search error: {str(e)}"
-
-
-@tool
-def execute_python_code(code: str) -> str:
-    """Execute Python code to run calculations, demonstrate algorithms, or simulate logic. Returns printed output."""
-    try:
-        import io
-        import sys
-
-        output = io.StringIO()
-        old_stdout = sys.stdout
-        sys.stdout = output
-
-        safe_globals = {
-            "__builtins__": __builtins__,
-            "print": print,
-            "sum": sum,
-            "len": len,
-            "list": list,
-            "dict": dict,
-            "set": set,
-            "range": range,
-            "enumerate": enumerate,
-            "zip": zip,
-            "map": map,
-            "filter": filter,
-            "sorted": sorted,
-            "min": min,
-            "max": max,
-            "abs": abs,
-            "round": round,
-        }
-
-        exec(code, safe_globals)
-        sys.stdout = old_stdout
-        result = output.getvalue()
-        return result if result.strip() else "Code executed successfully (no output)."
-    except Exception as e:
-        sys.stdout = sys.__stdout__
-        return f"Code Execution Error: {str(e)}"
 
 
 # ----- AGENTS -----
 
 class AgentService:
+
+    @staticmethod
+    def _coerce_output_text(output: object) -> str:
+        """Normalize provider-specific structured content into plain text for UI rendering."""
+        if isinstance(output, str):
+            return output
+
+        if isinstance(output, list):
+            parts = []
+            for item in output:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict):
+                    text_part = item.get("text")
+                    if text_part:
+                        parts.append(str(text_part))
+                elif item is not None:
+                    parts.append(str(item))
+            return "\n".join(part for part in parts if part).strip() or "No response generated."
+
+        if isinstance(output, dict):
+            text_part = output.get("text")
+            if text_part:
+                return str(text_part)
+
+        return str(output) if output is not None else "No response generated."
+
+    @staticmethod
+    def _friendly_agent_error(exc: Exception) -> str:
+        message = str(exc)
+        lowered = message.lower()
+        if "429" in lowered or "resource_exhausted" in lowered or "quota" in lowered:
+            return "AI service is temporarily rate-limited. Please retry in about a minute."
+        if "no results found" in lowered:
+            return "I could not find enough external results just now. Please try rephrasing the query or try again shortly."
+        return f"Agent request failed: {message}"
+
+    @staticmethod
+    def _should_retry_with_groq(exc: Exception) -> bool:
+        lowered = str(exc).lower()
+        retry_signals = (
+            "429",
+            "quota",
+            "resource_exhausted",
+            "not found",
+            "models/",
+            "gemini",
+            "rate limit",
+        )
+        return any(signal in lowered for signal in retry_signals)
 
     @staticmethod
     async def get_teacher_agent_response(message: str, stats_str: str, teacher_name: str = "Instructor", teacher_email: str = "") -> str:
@@ -203,10 +246,53 @@ class AgentService:
                 "teacher_email": teacher_email,
             })
 
-            return result.get("output", "No response generated.")
+            return AgentService._coerce_output_text(result.get("output", "No response generated."))
         except Exception as e:
-            print(f"Teacher Agent Error: {e}")
-            return f"Agent Generation Failed: {str(e)}"
+            logger.exception("Teacher agent generation failed")
+
+            if AgentService._should_retry_with_groq(e):
+                try:
+                    logger.warning("Retrying teacher agent with Groq fallback")
+                    llm = get_llm(force_provider="groq")
+                    agent_tools = [search_uploaded_course_materials, search_web, search_youtube, send_email_to_student]
+
+                    prompt = ChatPromptTemplate.from_messages([
+                        ("system", (
+                            "You are a world-class educational research assistant for {teacher_name} ({teacher_email}).\n"
+                            "Your mission is to provide deep, Perplexity-style classroom insights using every tool in your belt.\n\n"
+                            "INSTRUCTIONS:\n"
+                            "1. For any conceptual or research question, ALWAYS use search_web, search_youtube, and search_uploaded_course_materials to gather data first.\n"
+                            "2. Use stats to personalize advice: {stats}\n"
+                            "3. Format your final report with clear H1/H2 headers, bold text, and numbered lists.\n"
+                            "4. Include '### Recommended Videos' at the end of research answers.\n"
+                            "5. Cite web sources directly: [Source](URL).\n\n"
+                            "Rules: Only respond directly to greetings like 'hi' or 'hello'. For all other requests, you MUST trigger your search tools."
+                        )),
+                        ("human", "{input}"),
+                        ("placeholder", "{agent_scratchpad}"),
+                    ])
+
+                    agent = create_tool_calling_agent(llm, agent_tools, prompt)
+                    executor = AgentExecutor(
+                        agent=agent,
+                        tools=agent_tools,
+                        verbose=True,
+                        handle_parsing_errors=True,
+                        max_iterations=5,
+                    )
+
+                    result = await executor.ainvoke({
+                        "input": message,
+                        "stats": stats_str,
+                        "teacher_name": teacher_name,
+                        "teacher_email": teacher_email,
+                    })
+                    return AgentService._coerce_output_text(result.get("output", "No response generated."))
+                except Exception as fallback_exc:
+                    logger.exception("Teacher Groq fallback failed")
+                    return AgentService._friendly_agent_error(fallback_exc)
+
+            return AgentService._friendly_agent_error(e)
 
     @staticmethod
     async def get_student_tutor_response(
@@ -215,7 +301,19 @@ class AgentService:
         """Handles the Student AI Study Chatbot using an Agent tailored to their exact learning style."""
         try:
             llm = get_llm()
-            agent_tools = [search_uploaded_course_materials, search_web, search_youtube, execute_python_code]
+            agent_tools = [search_uploaded_course_materials, search_web, search_youtube]
+
+            history_text = ""
+            if chat_history:
+                # Keep only a short tail of dialogue for context.
+                turns = chat_history[-6:]
+                formatted_turns = []
+                for turn in turns:
+                    role = turn.get("role", "user")
+                    content = str(turn.get("content", "")).strip()
+                    if content:
+                        formatted_turns.append(f"{role}: {content}")
+                history_text = "\n".join(formatted_turns)
 
             prompt = ChatPromptTemplate.from_messages([
                 ("system", (
@@ -231,7 +329,8 @@ class AgentService:
                     "Rules:\n"
                     "- Use headers, bold text, and numbered lists.\n"
                     "- Cite web sources directly.\n"
-                    "- Warm greetings only for the first message."
+                    "- Warm greetings only for the first message.\n"
+                    "- Recent conversation context:\n{history_context}"
                 )),
                 ("human", "{input}"),
                 ("placeholder", "{agent_scratchpad}"),
@@ -250,9 +349,69 @@ class AgentService:
                 "input": message,
                 "vark_style": vark_style,
                 "hm_style": hm_style,
+                "history_context": history_text or "No prior context provided.",
             })
 
-            return result.get("output", "No response generated.")
+            return AgentService._coerce_output_text(result.get("output", "No response generated."))
         except Exception as e:
-            print(f"Student Agent Error: {e}")
-            return f"Agent Tutor Failed: {str(e)}"
+            logger.exception("Student tutor agent generation failed")
+
+            if AgentService._should_retry_with_groq(e):
+                try:
+                    logger.warning("Retrying student tutor with Groq fallback")
+                    llm = get_llm(force_provider="groq")
+                    agent_tools = [search_uploaded_course_materials, search_web, search_youtube]
+
+                    history_text = ""
+                    if chat_history:
+                        turns = chat_history[-6:]
+                        formatted_turns = []
+                        for turn in turns:
+                            role = turn.get("role", "user")
+                            content = str(turn.get("content", "")).strip()
+                            if content:
+                                formatted_turns.append(f"{role}: {content}")
+                        history_text = "\n".join(formatted_turns)
+
+                    prompt = ChatPromptTemplate.from_messages([
+                        ("system", (
+                            "You are a world-class 1-on-1 AI Study Tutor and Researcher, acting like a high-end research engine (Perplexity style).\n"
+                            "CORE INSTRUCTION: You MUST use your tools (search_web, search_youtube, search_uploaded_course_materials) for EVERY user query, even if you think you know the answer. Gather deep research first.\n\n"
+                            "STUDENT PROFILE:\n"
+                            "- VARK: {vark_style} | HM: {hm_style}\n\n"
+                            "YOUR MISSION:\n"
+                            "1. DEEP DIVE: For every topic, search the web, course files, and YouTube.\n"
+                            "2. PERPLEXITY STYLE: Output answers in a structured, clean format with citations.\n"
+                            "3. VISUALS & VIDEOS: Always end by suggesting '### Watch & Learn' with YouTube video links.\n"
+                            "4. STYLE ADAPTATION: Adapt your response to their learning style.\n\n"
+                            "Rules:\n"
+                            "- Use headers, bold text, and numbered lists.\n"
+                            "- Cite web sources directly.\n"
+                            "- Warm greetings only for the first message.\n"
+                            "- Recent conversation context:\n{history_context}"
+                        )),
+                        ("human", "{input}"),
+                        ("placeholder", "{agent_scratchpad}"),
+                    ])
+
+                    agent = create_tool_calling_agent(llm, agent_tools, prompt)
+                    executor = AgentExecutor(
+                        agent=agent,
+                        tools=agent_tools,
+                        verbose=True,
+                        handle_parsing_errors=True,
+                        max_iterations=6,
+                    )
+
+                    result = await executor.ainvoke({
+                        "input": message,
+                        "vark_style": vark_style,
+                        "hm_style": hm_style,
+                        "history_context": history_text or "No prior context provided.",
+                    })
+                    return AgentService._coerce_output_text(result.get("output", "No response generated."))
+                except Exception as fallback_exc:
+                    logger.exception("Student Groq fallback failed")
+                    return AgentService._friendly_agent_error(fallback_exc)
+
+            return AgentService._friendly_agent_error(e)

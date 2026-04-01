@@ -4,13 +4,19 @@ from fastapi.responses import RedirectResponse
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
+from pymongo.errors import PyMongoError
 from app.routers import auth, dashboard, assessment
 from app.db.mongo import init_db
+from app.core.config import settings
 
 # Lifespan event to start MongoDB
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    app.state.db_ready = False
+async def lifespan(application: FastAPI):
+    application.state.db_ready = False
+
+    # Fail fast in production-like environments when secret configuration is unsafe.
+    settings.validate_runtime_secrets()
+
     try:
         database_url = os.getenv("DATABASE_URL", "")
         running_on_vercel = bool(os.getenv("VERCEL") or os.getenv("VERCEL_ENV"))
@@ -20,9 +26,9 @@ async def lifespan(app: FastAPI):
             print("Skipping MongoDB init on Vercel: DATABASE_URL is not configured.")
         else:
             await init_db()
-            app.state.db_ready = True
+            application.state.db_ready = True
             print("Connected to MongoDB!")
-    except Exception as exc:
+    except (PyMongoError, RuntimeError, ValueError, OSError) as exc:
         print(f"MongoDB initialization failed: {exc}")
     yield
 
@@ -37,4 +43,4 @@ app.include_router(assessment.router)
 
 @app.get("/")
 async def root():
-    return RedirectResponse(url="/auth/login")
+    return RedirectResponse(url="/auth/login")

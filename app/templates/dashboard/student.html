@@ -193,85 +193,6 @@
                 transform: translateY(0);
             }
         }
-
-        .settings-shell {
-            max-width: 920px;
-            display: grid;
-            gap: 18px;
-        }
-
-        .settings-intro {
-            background: linear-gradient(110deg, #0f172a 0%, #1d4ed8 48%, #2563eb 100%);
-            border-radius: 16px;
-            color: #fff;
-            padding: 24px;
-            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
-        }
-
-        .settings-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 16px;
-        }
-
-        .settings-card {
-            background: #fff;
-            border: 1px solid #dbeafe;
-            border-radius: 14px;
-            padding: 18px;
-            box-shadow: 0 6px 14px rgba(15, 23, 42, 0.04);
-        }
-
-        .settings-card h5 {
-            font-size: 15px;
-            font-weight: 800;
-            color: #0f172a;
-            margin-bottom: 4px;
-        }
-
-        .settings-card p {
-            color: #64748b;
-            font-size: 13px;
-            margin-bottom: 16px;
-        }
-
-        .settings-card .form-label {
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #64748b;
-            font-weight: 700;
-        }
-
-        .settings-card .form-control,
-        .settings-card .form-select {
-            border-radius: 10px;
-            border: 1px solid #dbe3ee;
-        }
-
-        .settings-card .form-control:focus,
-        .settings-card .form-select:focus {
-            border-color: #2563eb;
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
-        }
-
-        .settings-card .form-check-input:checked {
-            background-color: #2563eb;
-            border-color: #2563eb;
-        }
-
-        .settings-alert {
-            font-size: 13px;
-            border-radius: 10px;
-            padding: 10px 12px;
-            margin-bottom: 14px;
-        }
-
-        .settings-hint {
-            font-size: 12px;
-            color: #64748b;
-            margin-top: 6px;
-        }
     </style>
 </head>
 
@@ -292,7 +213,8 @@
                     <i class="bi bi-patch-question me-2"></i> Take Assessment
                 </a>
                 <a href="/dashboard/tutor" class="nav-link-custom" style="color: #6366f1;">
-                    <i class="bi bi-robot me-2"></i> AI Study Tutor <span class="badge bg-primary ms-1" style="font-size:10px;">PRO</span>
+                    <i class="bi bi-robot me-2"></i> AI Study Tutor <span class="badge bg-primary ms-1"
+                        style="font-size:10px;">PRO</span>
                 </a>
                 <a href="/dashboard/settings" class="nav-link-custom">
                     <i class="bi bi-gear me-2"></i> Account Settings
@@ -403,6 +325,8 @@
                 <a href="/assessment/" class="btn btn-primary px-4 mt-2">Start Assessment</a>
             </div>
             {% endif %}
+
+
         </div>
     </div>
 
@@ -429,6 +353,8 @@
                 scales: { r: { ticks: { display: false }, beginAtZero: true } }
             }
         });
+
+
     </script>
     {% endif %}
 </body>

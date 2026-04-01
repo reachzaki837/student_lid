@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Request, Form, status, Response
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi import APIRouter, Request, Form, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from typing import Annotated, Optional
-from urllib.parse import urlencode, urljoin
-import requests as http_requests
+from urllib.parse import urlencode
+import httpx
 
 from app.services.auth import AuthService
 from app.models.user import UserRole
@@ -165,33 +165,37 @@ async def google_callback(request: Request, code: Optional[str] = None, error: O
     redirect_uri = get_redirect_uri(request)
 
     # ── Step 1: Exchange the code for tokens ──
-    token_response = http_requests.post(
-        GOOGLE_TOKEN_URL,
-        data={
-            "code": code,
-            "client_id": settings.GOOGLE_CLIENT_ID,
-            "client_secret": settings.GOOGLE_CLIENT_SECRET,
-            "redirect_uri": redirect_uri,
-            "grant_type": "authorization_code",
-        },
-    )
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            token_response = await client.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "code": code,
+                    "client_id": settings.GOOGLE_CLIENT_ID,
+                    "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                    "redirect_uri": redirect_uri,
+                    "grant_type": "authorization_code",
+                },
+            )
 
-    if token_response.status_code != 200:
-        return RedirectResponse(url="/auth/login?error=Failed+to+connect+with+Google")
+            if token_response.status_code != 200:
+                return RedirectResponse(url="/auth/login?error=Failed+to+connect+with+Google")
 
-    token_data = token_response.json()
-    access_token_google = token_data.get("access_token")
+            token_data = token_response.json()
+            access_token_google = token_data.get("access_token")
 
-    # ── Step 2: Get user info from Google ──
-    userinfo_response = http_requests.get(
-        GOOGLE_USERINFO_URL,
-        headers={"Authorization": f"Bearer {access_token_google}"},
-    )
+            # ── Step 2: Get user info from Google ──
+            userinfo_response = await client.get(
+                GOOGLE_USERINFO_URL,
+                headers={"Authorization": f"Bearer {access_token_google}"},
+            )
 
-    if userinfo_response.status_code != 200:
-        return RedirectResponse(url="/auth/login?error=Failed+to+get+user+info+from+Google")
+            if userinfo_response.status_code != 200:
+                return RedirectResponse(url="/auth/login?error=Failed+to+get+user+info+from+Google")
 
-    info = userinfo_response.json()
+            info = userinfo_response.json()
+    except httpx.HTTPError:
+        return RedirectResponse(url="/auth/login?error=Google+authentication+service+unavailable")
     email = info.get("email", "")
     name = info.get("name", "")
     picture = info.get("picture", "")

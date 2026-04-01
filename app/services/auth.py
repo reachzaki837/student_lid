@@ -1,5 +1,6 @@
 from app.models.user import User, UserRole
 from app.core.config import settings
+from app.core.security import verify_password, get_password_hash
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from typing import Optional
@@ -14,8 +15,14 @@ class AuthService:
         if user.auth_provider == "google" and not user.password:
             # Google-only user trying password login
             return None
-        if user.password != password:
+        if not verify_password(password, user.password or ""):
             return None
+
+        # Migrate legacy plaintext passwords to PBKDF2 on successful login.
+        if user.password and not user.password.startswith("pbkdf2_sha256$"):
+            user.password = get_password_hash(password)
+            await user.save()
+
         return user
 
     @staticmethod
@@ -26,7 +33,7 @@ class AuthService:
 
         new_user = User(
             email=email,
-            password=password,
+            password=get_password_hash(password),
             role=role,
             name=name,
             auth_provider="local",
@@ -50,7 +57,7 @@ class AuthService:
                 "picture": idinfo.get("picture", ""),
                 "google_id": idinfo.get("sub"),
             }
-        except Exception:
+        except ValueError:
             return None
 
     @staticmethod

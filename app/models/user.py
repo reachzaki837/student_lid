@@ -17,6 +17,9 @@ class User(Document):
     auth_provider: str = Field(default="local")  # "local" or "google"
     google_id: Optional[str] = None
     profile_picture: Optional[str] = None
+    department: Optional[str] = None
+    degree: Optional[str] = None
+    semester: Optional[str] = None
     theme_mode: str = Field(default="light")
     notifications_enabled: bool = Field(default=True)
     weekly_digest: bool = Field(default=True)

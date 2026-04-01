@@ -5,7 +5,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from app.core.security import jwt
 from app.core.config import settings
-from app.models.user import User, Assessment, Class, Enrollment, Material
+from app.models.user import User, Assessment, Class, Enrollment
+from app.core.security import verify_password, get_password_hash
 from app.services.scoring import ScoringService
 from app.services.agent import AgentService
 from pydantic import BaseModel
@@ -21,6 +22,33 @@ class EmailRequest(BaseModel):
 
 router = APIRouter(tags=["dashboard"])
 templates = Jinja2Templates(directory="app/templates")
+
+
+async def _build_teacher_stats(user_email: str) -> tuple[str, dict, int, int]:
+    classes = await Class.find(Class.teacher_email == user_email).to_list()
+    enrollments = []
+    for cls in classes:
+        cls_enrolls = await Enrollment.find(Enrollment.class_code == cls.code).to_list()
+        enrollments.extend(cls_enrolls)
+
+    unique_emails = list(set([e.student_email for e in enrollments]))
+    style_counts = {"Visual": 0, "Aural": 0, "Read/Write": 0, "Kinesthetic": 0}
+
+    for email in unique_emails:
+        assessment = await Assessment.find_one(Assessment.user_email == email, sort=[("created_at", -1)])
+        if assessment and assessment.vark_scores:
+            style_name = max(assessment.vark_scores, key=assessment.vark_scores.get)
+            if style_name in style_counts:
+                style_counts[style_name] += 1
+
+    stats_str = (
+        f"Total Students: {len(unique_emails)}. Learning Styles Breakdown -> "
+        f"Visual: {style_counts['Visual']}, "
+        f"Aural: {style_counts['Aural']}, "
+        f"Read/Write: {style_counts['Read/Write']}, "
+        f"Kinesthetic: {style_counts['Kinesthetic']}."
+    )
+    return stats_str, style_counts, len(classes), len(unique_emails)
 
 
 def get_settings_feedback(request: Request) -> dict:
@@ -87,6 +115,14 @@ async def dashboard(request: Request, user: User = Depends(get_current_user)):
         student = await User.find_one(User.email == email)
         assessment = await Assessment.find_one(Assessment.user_email == email, sort=[("created_at", -1)])
         email_profile = ScoringService.get_student_email_profile(email)
+
+        saved_department = (getattr(student, "department", "") or "").strip() if student else ""
+        saved_degree = (getattr(student, "degree", "") or "").strip() if student else ""
+        saved_semester = (getattr(student, "semester", "") or "").strip() if student else ""
+
+        display_department = saved_department or email_profile["department"]
+        display_degree = saved_degree or email_profile["degree"]
+        display_progress = saved_semester or email_profile["academic_progress"]
         
         style_name = "Pending"
         if assessment:
@@ -100,9 +136,9 @@ async def dashboard(request: Request, user: User = Depends(get_current_user)):
             "style": style_name,
             "vark_scores": assessment.vark_scores if assessment else {},
             "hm_scores": assessment.hm_scores if assessment else {},
-            "department": email_profile["department"],
-            "degree": email_profile["degree"],
-            "academic_progress": email_profile["academic_progress"]
+            "department": display_department,
+            "degree": display_degree,
+            "academic_progress": display_progress
         })
 
     all_students = await User.find(User.role == "student").to_list()
@@ -225,7 +261,13 @@ async def delete_class(class_code: str = Form(...), user: User = Depends(get_cur
 
 # NEW ROUTE: Update Profile Settings
 @router.post("/dashboard/update_profile")
-async def update_profile(name: str = Form(...), user: User = Depends(get_current_user)):
+async def update_profile(
+    name: str = Form(...),
+    department: str = Form(""),
+    degree: str = Form(""),
+    semester: str = Form(""),
+    user: User = Depends(get_current_user)
+):
     if not user:
         return RedirectResponse(url="/auth/login")
 
@@ -234,6 +276,12 @@ async def update_profile(name: str = Form(...), user: User = Depends(get_current
         return RedirectResponse(url="/dashboard/settings?profile_error=Display+name+cannot+be+empty", status_code=302)
 
     user.name = normalized_name
+
+    if user.role == "student":
+        user.department = department.strip() or None
+        user.degree = degree.strip() or None
+        user.semester = semester.strip() or None
+
     await user.save()
     return RedirectResponse(url="/dashboard/settings?profile_success=Profile+updated+successfully", status_code=302)
 
@@ -248,7 +296,7 @@ async def update_password(
     if not user:
         return RedirectResponse(url="/auth/login")
 
-    if user.password != current_password:
+    if not verify_password(current_password, user.password or ""):
         return RedirectResponse(url="/dashboard/settings?password_error=Current+password+is+incorrect", status_code=302)
 
     if len(new_password) < 6:
@@ -257,7 +305,7 @@ async def update_password(
     if new_password != confirm_password:
         return RedirectResponse(url="/dashboard/settings?password_error=New+password+and+confirm+password+must+match", status_code=302)
 
-    user.password = new_password
+    user.password = get_password_hash(new_password)
     await user.save()
     return RedirectResponse(url="/dashboard/settings?password_success=Password+updated+successfully", status_code=302)
 
@@ -292,40 +340,39 @@ async def teacher_chat(request: Request, user: User = Depends(get_current_user))
         
     data = await request.json()
     message = data.get("message", "")
-    
-    # 1. Dynamically calculate the live class stats
-    classes = await Class.find(Class.teacher_email == user.email).to_list()
-    enrollments = []
-    for cls in classes:
-        cls_enrolls = await Enrollment.find(Enrollment.class_code == cls.code).to_list()
-        enrollments.extend(cls_enrolls)
-        
-    unique_emails = list(set([e.student_email for e in enrollments]))
-    style_counts = {"Visual": 0, "Aural": 0, "Read/Write": 0, "Kinesthetic": 0}
-    
-    for email in unique_emails:
-        assessment = await Assessment.find_one(Assessment.user_email == email, sort=[("created_at", -1)])
-        if assessment and assessment.vark_scores:
-            style_name = max(assessment.vark_scores, key=assessment.vark_scores.get)
-            if style_name in style_counts:
-                style_counts[style_name] += 1
-                
-    stats_str = f"Total Students: {len(unique_emails)}. Learning Styles Breakdown -> Visual: {style_counts['Visual']}, Aural: {style_counts['Aural']}, Read/Write: {style_counts['Read/Write']}, Kinesthetic: {style_counts['Kinesthetic']}."
+    stats_str, _, _, _ = await _build_teacher_stats(user.email)
     
     # 2. Ask Groq for advice based on these stats
     response = await AgentService.get_teacher_agent_response(message, stats_str, user.name, user.email)
     return {"response": response}
 
+
+@router.get("/dashboard/assistant", response_class=HTMLResponse)
+async def teacher_assistant_page(request: Request, user: User = Depends(get_current_user)):
+    if not user or user.role != "teacher":
+        return RedirectResponse(url="/auth/login")
+
+    stats_str, style_counts, class_count, student_count = await _build_teacher_stats(user.email)
+    return templates.TemplateResponse(request, "dashboard/teacher_assistant.html", {
+        "user": user,
+        "stats_str": stats_str,
+        "style_counts": style_counts,
+        "class_count": class_count,
+        "student_count": student_count,
+    })
+
 @router.post("/dashboard/upload_document")
 async def upload_document(file: UploadFile = File(...), user: User = Depends(get_current_user)):
-    """Uploads document for GraphRAG query ingestion."""
+    """Uploads documents/images for RAG query ingestion."""
     if not user:
         return JSONResponse(status_code=401, content={"error": "Unauthorized"})
     content = await file.read()
-    success = await RAGService.process_upload(content, file.filename, user.email)
+    success, message = await RAGService.process_upload(content, file.filename, user.email)
     if success:
         return {"filename": file.filename, "status": "success"}
-    return JSONResponse(status_code=500, content={"error": "Failed to process document"})
+
+    status_code = 400 if "Unsupported file type" in message or "No readable content" in message else 500
+    return JSONResponse(status_code=status_code, content={"error": message or "Failed to process document"})
 
 @router.get("/dashboard/tutor", response_class=HTMLResponse)
 async def student_tutor(request: Request, user: User = Depends(get_current_user)):
@@ -345,21 +392,27 @@ async def student_tutor(request: Request, user: User = Depends(get_current_user)
 @router.post("/dashboard/chat_student")
 async def student_chat(request: Request, user: User = Depends(get_current_user)):
     """Handles the specialized Student AI Tutor Chatbot logic using ReAct."""
-    if not user or user.role != "student": 
-        return {"error": "Unauthorized"}
-        
-    data = await request.json()
-    message = data.get("message", "")
-    
-    assessment = await Assessment.find_one(Assessment.user_email == user.email, sort=[("created_at", -1)])
-    vark_style = "Unknown"
-    hm_style = "Unknown"
-    if assessment:
-        vark_style = max(assessment.vark_scores, key=assessment.vark_scores.get)
-        hm_style = max(assessment.hm_scores, key=assessment.hm_scores.get)
-        
-    response = await AgentService.get_student_tutor_response(message, vark_style, hm_style)
-    return {"response": response}
+    if not user or user.role != "student":
+        return JSONResponse(status_code=401, content={"error": "Unauthorized"})
+
+    try:
+        data = await request.json()
+        message = data.get("message", "")
+
+        assessment = await Assessment.find_one(Assessment.user_email == user.email, sort=[("created_at", -1)])
+        vark_style = "Unknown"
+        hm_style = "Unknown"
+
+        if assessment and assessment.vark_scores and assessment.hm_scores:
+            vark_style = max(assessment.vark_scores, key=assessment.vark_scores.get)
+            hm_style = max(assessment.hm_scores, key=assessment.hm_scores.get)
+
+        response = await AgentService.get_student_tutor_response(message, vark_style, hm_style)
+        return {"response": response}
+    except (ValueError, TypeError) as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+    except Exception:
+        return JSONResponse(status_code=500, content={"error": "Failed to generate tutor response."})
 
 @router.post("/dashboard/send_email")
 async def send_teacher_email(request: EmailRequest, user: User = Depends(get_current_user)):

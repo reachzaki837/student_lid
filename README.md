@@ -24,7 +24,7 @@ In a traditional classroom, a "one-size-fits-all" teaching approach inevitably l
 * **Email / Password Registration & Login** — Standard sign-up with server-side bcrypt-equivalent (pbkdf2_sha256) password hashing. Plaintext legacy passwords are transparently migrated to the secure hash on first login.
 * **Google OAuth 2.0** — One-click sign-in with Google. Existing accounts are recognized and logged in automatically; new Google users are redirected to a pre-filled registration page to choose their role.
 * **JWT Session Cookies** — Authenticated sessions are managed via an HttpOnly `access_token` cookie (30-minute expiry), preventing XSS-based token theft.
-* **Role-Based Access Control** — Three roles are defined (`student`, `teacher`, `admin`). Every dashboard route and API endpoint enforces the correct role before serving content.
+* **Role-Based Access Control** — Two roles are defined (`student`, `teacher`). Every dashboard route and API endpoint enforces the correct role before serving content.
 
 ---
 

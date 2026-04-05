@@ -7,3 +7,4 @@ __pycache__/
 # AI Agent Configuration
 AGENTS.md
 .agents/
+CLAUDE.md

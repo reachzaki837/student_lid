@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 from app.core.security import get_password_hash, verify_password
 from app.services.auth import AuthService
@@ -65,4 +66,84 @@ def test_authenticate_user_rejects_invalid_password(monkeypatch) -> None:
     result = asyncio.run(AuthService.authenticate_user("student@example.com", "WrongPass"))
 
     assert result is None
+    assert dummy.saved is False
+
+
+def test_request_password_reset_unknown_email_is_silent(monkeypatch) -> None:
+    class FakeUserModel:
+        email = object()
+
+    async def fake_find_one(*_args, **_kwargs):
+        return None
+
+    async def fake_send_password_reset_email(*_args, **_kwargs):
+        raise AssertionError("send_password_reset_email should not be called for unknown emails")
+
+    FakeUserModel.find_one = staticmethod(fake_find_one)
+    monkeypatch.setattr(auth_module, "User", FakeUserModel)
+    monkeypatch.setattr(auth_module, "send_password_reset_email", fake_send_password_reset_email)
+
+    asyncio.run(
+        AuthService.request_password_reset(
+            "missing@example.com",
+            lambda token: f"https://example.com/auth/reset-password?token={token}",
+        )
+    )
+
+
+def test_reset_password_with_token_updates_password_and_clears_reset_fields(monkeypatch) -> None:
+    class ResettableUser:
+        def __init__(self) -> None:
+            self.email = "student@example.com"
+            self.password = "legacy"
+            self.auth_provider = "local"
+            self.password_reset_token_hash = "token-hash"
+            self.password_reset_expires_at = datetime.now(timezone.utc) + timedelta(minutes=30)
+            self.saved = False
+
+        async def save(self) -> None:
+            self.saved = True
+
+    dummy = ResettableUser()
+
+    async def fake_validate_reset_token(_token: str):
+        return dummy
+
+    monkeypatch.setattr(AuthService, "validate_reset_token", staticmethod(fake_validate_reset_token))
+
+    success = asyncio.run(AuthService.reset_password_with_token("valid-token", "NewPass123"))
+
+    assert success is True
+    assert dummy.saved is True
+    assert dummy.password_reset_token_hash is None
+    assert dummy.password_reset_expires_at is None
+    assert dummy.password.startswith("pbkdf2_sha256$")
+    assert verify_password("NewPass123", dummy.password)
+
+
+def test_validate_reset_token_handles_naive_datetime(monkeypatch) -> None:
+    class ResettableUser:
+        def __init__(self) -> None:
+            self.password_reset_token_hash = "token-hash"
+            self.password_reset_expires_at = datetime.utcnow() + timedelta(minutes=15)
+            self.saved = False
+
+        async def save(self) -> None:
+            self.saved = True
+
+    dummy = ResettableUser()
+
+    class FakeUserModel:
+        password_reset_token_hash = object()
+
+    async def fake_find_one(*_args, **_kwargs):
+        return dummy
+
+    FakeUserModel.find_one = staticmethod(fake_find_one)
+    monkeypatch.setattr(auth_module, "User", FakeUserModel)
+    monkeypatch.setattr(AuthService, "_hash_reset_token", staticmethod(lambda _token: "token-hash"))
+
+    result = asyncio.run(AuthService.validate_reset_token("preview-token"))
+
+    assert result is dummy
     assert dummy.saved is False

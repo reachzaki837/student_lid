@@ -13,6 +13,8 @@ class UserRole(str, Enum):
 class User(Document):
     email: Indexed(EmailStr, unique=True)
     password: Optional[str] = None
+    password_reset_token_hash: Optional[str] = None
+    password_reset_expires_at: Optional[datetime] = None
     name: str = Field(default="")
     role: UserRole = UserRole.STUDENT
     auth_provider: str = Field(default="local")  # "local" or "google"

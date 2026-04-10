@@ -493,6 +493,10 @@
         const localConversationHistory = [];
         let activeConversationId = null;
 
+        // Store template variables for reuse
+        const userName = "{{ user.name.split(' ')[0] if user.name else 'there' }}";
+        const dominantStyle = "{{ assessment.dominant_style }}";
+
         function scrollToBottom() {
             chatHistory.scrollTop = chatHistory.scrollHeight;
         }
@@ -508,7 +512,13 @@
 
         function resetTutorGreeting() {
             chatHistory.innerHTML = `
-                <div class="chat-msg chat-ai">Context cleared. How can I help you?</div>
+                <div class="chat-msg chat-ai">
+                    Hi ${userName}! 👋<br><br>
+                    I am your personal AI tutor. I have completely customized my teaching approach to fit your
+                    <strong>${dominantStyle}</strong> learning style.<br><br>
+                    I can search the web, execute safe Python logic, or answer questions based on documents you upload!
+                    What are we learning today?
+                </div>
                 <div class="typing-indicator" id="typingIndicator">
                     <div class="typing-dot"></div>
                     <div class="typing-dot"></div>

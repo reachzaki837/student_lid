@@ -18,3 +18,13 @@ class UserResponse(UserBase):
 
     class Config:
         from_attributes = True
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    password: str = Field(min_length=8)
+    confirm_password: str = Field(min_length=8)

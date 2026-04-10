@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Form, status
+from fastapi import APIRouter, Request, Form, status, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from typing import Annotated, Optional
@@ -6,6 +6,7 @@ from urllib.parse import urlencode
 import httpx
 
 from app.services.auth import AuthService
+from app.services.email import build_password_reset_preview_html
 from app.models.user import UserRole
 from app.core.security import create_access_token
 from app.core.config import settings
@@ -29,9 +30,14 @@ def get_redirect_uri(request: Request) -> str:
 # ──────────────────────────────────────────────
 
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, error: Optional[str] = None):
+async def login_page(
+    request: Request,
+    error: Optional[str] = None,
+    message: Optional[str] = None,
+):
     return templates.TemplateResponse(request, "auth/login.html", {
         "error": error,
+        "message": message,
     })
 
 
@@ -133,6 +139,127 @@ async def register(
         return templates.TemplateResponse(request, "auth/register.html", ctx)
 
     return RedirectResponse(url="/auth/login", status_code=status.HTTP_302_FOUND)
+
+
+@router.get("/forgot-password", response_class=HTMLResponse)
+async def forgot_password_page(request: Request, message: Optional[str] = None):
+    return templates.TemplateResponse(
+        request,
+        "auth/forgot_password.html",
+        {"message": message},
+    )
+
+
+@router.post("/forgot-password", response_class=HTMLResponse)
+async def forgot_password_submit(
+    request: Request,
+    email: Annotated[str, Form()],
+):
+    base = str(request.base_url).rstrip("/")
+
+    await AuthService.request_password_reset(
+        email=email,
+        reset_link_builder=lambda token: f"{base}/auth/reset-password?token={token}",
+    )
+
+    return templates.TemplateResponse(
+        request,
+        "auth/forgot_password.html",
+        {
+            "message": "If an account exists for that email, a password reset link has been sent.",
+        },
+    )
+
+
+@router.get("/dev/email-preview/reset-password", response_class=HTMLResponse)
+async def preview_reset_password_email(
+    request: Request,
+    name: str = "Student",
+    token: str = "preview-token-123",
+):
+    env = (settings.ENVIRONMENT or "").strip().lower()
+    allowed_envs = {"development", "dev", "local", "test"}
+    if env not in allowed_envs:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    base = str(request.base_url).rstrip("/")
+    reset_link = f"{base}/auth/reset-password?token={token}"
+    html = build_password_reset_preview_html(name, reset_link)
+    return HTMLResponse(content=html)
+
+
+@router.get("/reset-password", response_class=HTMLResponse)
+async def reset_password_page(request: Request, token: Optional[str] = None):
+    if not token:
+        return templates.TemplateResponse(
+            request,
+            "auth/reset_password.html",
+            {
+                "error": "Invalid or missing reset token. Please request a new link.",
+                "token": "",
+            },
+        )
+
+    user = await AuthService.validate_reset_token(token)
+    if not user:
+        return templates.TemplateResponse(
+            request,
+            "auth/reset_password.html",
+            {
+                "error": "This reset link is invalid or has expired. Please request a new one.",
+                "token": "",
+            },
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "auth/reset_password.html",
+        {"token": token},
+    )
+
+
+@router.post("/reset-password", response_class=HTMLResponse)
+async def reset_password_submit(
+    request: Request,
+    token: Annotated[str, Form()],
+    password: Annotated[str, Form()],
+    confirm_password: Annotated[str, Form()],
+):
+    if password != confirm_password:
+        return templates.TemplateResponse(
+            request,
+            "auth/reset_password.html",
+            {
+                "error": "Passwords do not match.",
+                "token": token,
+            },
+        )
+
+    if len(password) < 8:
+        return templates.TemplateResponse(
+            request,
+            "auth/reset_password.html",
+            {
+                "error": "Password must be at least 8 characters long.",
+                "token": token,
+            },
+        )
+
+    success = await AuthService.reset_password_with_token(token=token, new_password=password)
+    if not success:
+        return templates.TemplateResponse(
+            request,
+            "auth/reset_password.html",
+            {
+                "error": "This reset link is invalid or has expired. Please request a new one.",
+                "token": "",
+            },
+        )
+
+    return RedirectResponse(
+        url="/auth/login?message=Password+updated.+Please+sign+in.",
+        status_code=status.HTTP_302_FOUND,
+    )
 
 
 # ──────────────────────────────────────────────

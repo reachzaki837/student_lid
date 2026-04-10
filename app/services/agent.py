@@ -18,7 +18,7 @@ def get_llm(force_provider: Optional[str] = None) -> object:
         if google_api_key:
             return ChatGoogleGenerativeAI(
                 temperature=0,
-                model="gemini-2.5-flash",
+                model="gemini-3-flash",
                 google_api_key=google_api_key,
             )
         raise ValueError("GOOGLE_API_KEY must be configured for Google provider")
@@ -37,7 +37,7 @@ def get_llm(force_provider: Optional[str] = None) -> object:
     if google_api_key:
         return ChatGoogleGenerativeAI(
             temperature=0,
-            model="gemini-2.5-flash",
+            model="gemini-3-flash",
             google_api_key=google_api_key,
         )
 

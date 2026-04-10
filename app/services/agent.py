@@ -176,6 +176,32 @@ class AgentService:
         }
 
     @staticmethod
+    def _requires_research_tools(message: str) -> bool:
+        lowered = (message or "").lower()
+        research_signals = (
+            "latest",
+            "current",
+            "news",
+            "trend",
+            "recent",
+            "today",
+            "source",
+            "citation",
+            "cite",
+            "link",
+            "youtube",
+            "video",
+            "search",
+            "web",
+            "research",
+            "paper",
+            "journal",
+            "course material",
+            "uploaded",
+        )
+        return any(signal in lowered for signal in research_signals)
+
+    @staticmethod
     def _coerce_output_text(output: object) -> str:
         """Normalize provider-specific structured content into plain text for UI rendering."""
         if isinstance(output, str):
@@ -387,6 +413,27 @@ class AgentService:
                         formatted_turns.append(f"{role}: {content}")
                 history_text = "\n".join(formatted_turns)
 
+            # Fast path: avoid tool-calling overhead for standard explanatory questions.
+            if not AgentService._requires_research_tools(message):
+                llm = get_llm()
+                direct_prompt = ChatPromptTemplate.from_messages([
+                    ("system", (
+                        "You are a supportive AI study tutor.\n"
+                        "Adapt explanations to the student profile: VARK={vark_style}, HM={hm_style}.\n"
+                        "For basic conceptual questions, answer directly without tool usage.\n"
+                        "Use clear structure and practical examples."
+                    )),
+                    ("human", "Recent conversation:\n{history_context}\n\nQuestion: {input}"),
+                ])
+                chain = direct_prompt | llm
+                direct_result = await chain.ainvoke({
+                    "input": message,
+                    "vark_style": vark_style,
+                    "hm_style": hm_style,
+                    "history_context": history_text or "No prior context provided.",
+                })
+                return AgentService._coerce_output_text(getattr(direct_result, "content", direct_result))
+
             prompt = ChatPromptTemplate.from_messages([
                 ("system", (
                     "You are a world-class 1-on-1 AI Study Tutor and Researcher, acting like a high-end research engine (Perplexity style).\n"
@@ -472,7 +519,7 @@ class AgentService:
                         tools=agent_tools,
                         verbose=True,
                         handle_parsing_errors=True,
-                        max_iterations=6,
+                        max_iterations=4,
                     )
 
                     result = await executor.ainvoke({

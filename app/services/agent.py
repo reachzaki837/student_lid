@@ -268,6 +268,34 @@ class AgentService:
         return any(signal in lowered for signal in retry_signals)
 
     @staticmethod
+    async def _direct_student_response(
+        message: str,
+        vark_style: str,
+        hm_style: str,
+        history_text: str,
+        force_provider: Optional[str] = None,
+    ) -> str:
+        """Fallback response path that avoids tool-calling and answers directly."""
+        llm = get_llm(force_provider=force_provider) if force_provider else get_llm()
+        direct_prompt = ChatPromptTemplate.from_messages([
+            ("system", (
+                "You are a supportive AI study tutor.\n"
+                "Adapt explanations to the student profile: VARK={vark_style}, HM={hm_style}.\n"
+                "Answer directly without tool usage and keep the structure clear.\n"
+                "Use concise sections and practical examples."
+            )),
+            ("human", "Recent conversation:\n{history_context}\n\nQuestion: {input}"),
+        ])
+        chain = direct_prompt | llm
+        direct_result = await chain.ainvoke({
+            "input": message,
+            "vark_style": vark_style,
+            "hm_style": hm_style,
+            "history_context": history_text or "No prior context provided.",
+        })
+        return AgentService._coerce_output_text(getattr(direct_result, "content", direct_result))
+
+    @staticmethod
     async def get_teacher_agent_response(
         message: str,
         stats_str: str,
@@ -415,24 +443,12 @@ class AgentService:
 
             # Fast path: avoid tool-calling overhead for standard explanatory questions.
             if not AgentService._requires_research_tools(message):
-                llm = get_llm()
-                direct_prompt = ChatPromptTemplate.from_messages([
-                    ("system", (
-                        "You are a supportive AI study tutor.\n"
-                        "Adapt explanations to the student profile: VARK={vark_style}, HM={hm_style}.\n"
-                        "For basic conceptual questions, answer directly without tool usage.\n"
-                        "Use clear structure and practical examples."
-                    )),
-                    ("human", "Recent conversation:\n{history_context}\n\nQuestion: {input}"),
-                ])
-                chain = direct_prompt | llm
-                direct_result = await chain.ainvoke({
-                    "input": message,
-                    "vark_style": vark_style,
-                    "hm_style": hm_style,
-                    "history_context": history_text or "No prior context provided.",
-                })
-                return AgentService._coerce_output_text(getattr(direct_result, "content", direct_result))
+                return await AgentService._direct_student_response(
+                    message=message,
+                    vark_style=vark_style,
+                    hm_style=hm_style,
+                    history_text=history_text,
+                )
 
             prompt = ChatPromptTemplate.from_messages([
                 ("system", (
@@ -531,6 +547,27 @@ class AgentService:
                     return AgentService._coerce_output_text(result.get("output", "No response generated."))
                 except Exception as fallback_exc:
                     logger.exception("Student Groq fallback failed")
-                    return AgentService._friendly_agent_error(fallback_exc)
+                    try:
+                        logger.warning("Falling back to direct student response after Groq tool failure")
+                        return await AgentService._direct_student_response(
+                            message=message,
+                            vark_style=vark_style,
+                            hm_style=hm_style,
+                            history_text=history_text,
+                            force_provider="groq",
+                        )
+                    except Exception:
+                        logger.exception("Student direct Groq fallback failed")
+                        return AgentService._friendly_agent_error(fallback_exc)
 
-            return AgentService._friendly_agent_error(e)
+            try:
+                logger.warning("Falling back to direct student response after tool-calling issue")
+                return await AgentService._direct_student_response(
+                    message=message,
+                    vark_style=vark_style,
+                    hm_style=hm_style,
+                    history_text=history_text,
+                )
+            except Exception:
+                logger.exception("Student direct fallback failed")
+                return AgentService._friendly_agent_error(e)

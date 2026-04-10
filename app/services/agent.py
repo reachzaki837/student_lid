@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 from typing import Optional
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -160,6 +161,21 @@ def search_uploaded_course_materials(query: str) -> str:
 class AgentService:
 
     @staticmethod
+    def _is_simple_greeting(message: str) -> bool:
+        normalized = re.sub(r"[^a-zA-Z]", "", (message or "").lower())
+        return normalized in {
+            "hi",
+            "hello",
+            "hey",
+            "hola",
+            "yo",
+            "sup",
+            "goodmorning",
+            "goodafternoon",
+            "goodevening",
+        }
+
+    @staticmethod
     def _coerce_output_text(output: object) -> str:
         """Normalize provider-specific structured content into plain text for UI rendering."""
         if isinstance(output, str):
@@ -189,6 +205,8 @@ class AgentService:
     def _friendly_agent_error(exc: Exception) -> str:
         message = str(exc)
         lowered = message.lower()
+        if "failed to call a function" in lowered or "failed_generation" in lowered:
+            return "I hit a temporary tool-calling issue. Please try again or ask a fuller question like 'Explain photosynthesis with examples'."
         if (
             "503" in lowered
             or "unavailable" in lowered
@@ -348,6 +366,12 @@ class AgentService:
     ) -> str:
         """Handles the Student AI Study Chatbot using an Agent tailored to their exact learning style."""
         try:
+            if AgentService._is_simple_greeting(message):
+                return (
+                    "Hi! I am your study tutor. Ask me any topic and I will break it down for your "
+                    f"{vark_style}/{hm_style} learning style with examples and practice steps."
+                )
+
             llm = get_llm()
             agent_tools = [search_uploaded_course_materials, search_web, search_youtube]
 

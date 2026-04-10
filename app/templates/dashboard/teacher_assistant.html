@@ -31,6 +31,12 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
+            overflow: hidden;
+        }
+
+        .sidebar-scroll {
+            overflow-y: auto;
+            padding-bottom: 12px;
         }
 
         .logo-container {
@@ -78,6 +84,57 @@
         .nav-link-custom:hover:not(.active) {
             background-color: #f1f5f9;
             color: #0f172a;
+        }
+
+        .thread-panel {
+            margin: 16px 16px 0 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 10px;
+            background: #f8fafc;
+        }
+
+        .thread-item {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 8px;
+            margin-top: 8px;
+            background: #ffffff;
+            cursor: pointer;
+        }
+
+        .thread-item.active {
+            border-color: #2563eb;
+            background: #eff6ff;
+        }
+
+        .thread-title {
+            font-size: 12px;
+            color: #1e293b;
+            font-weight: 700;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .thread-meta {
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        .thread-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 6px;
+        }
+
+        .thread-actions button {
+            border: none;
+            background: transparent;
+            color: #64748b;
+            padding: 0;
+            font-size: 12px;
         }
 
         .user-profile {
@@ -166,6 +223,18 @@
             margin-bottom: 0;
         }
 
+        .truncated-badge {
+            display: inline-block;
+            margin-top: 8px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #92400e;
+            background: #fef3c7;
+            border: 1px solid #fde68a;
+        }
+
         .chat-input-row {
             border-top: 1px solid #e5e7eb;
             padding: 12px;
@@ -214,7 +283,7 @@
 <body>
     <div class="layout">
         <div class="sidebar">
-            <div>
+            <div class="sidebar-scroll">
                 <div class="logo-container">
                     <div class="logo-icon"><i class="bi bi-book"></i></div> StudentLID
                 </div>
@@ -225,6 +294,14 @@
                     Assistant</a>
                 <a href="/dashboard/settings" class="nav-link-custom"><i class="bi bi-gear me-2"></i> Account
                     Settings</a>
+
+                <div class="thread-panel">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <div style="font-size:12px; font-weight:800; color:#334155;">Recent Chats</div>
+                        <button class="btn btn-sm btn-outline-primary py-0 px-2" id="newThreadBtn">New</button>
+                    </div>
+                    <div id="teacherThreadList"></div>
+                </div>
             </div>
             <div class="user-profile">
                 <div class="avatar">{{ user.name[0] | upper if user.name else 'T' }}</div>
@@ -246,8 +323,8 @@
                         <div style="font-size: 13px; color: #64748b;">Dedicated research assistant with
                             classroom-context guidance.</div>
                     </div>
-                    <button class="btn btn-outline-secondary btn-sm" id="clearBtn"><i
-                            class="bi bi-trash3 me-1"></i>Clear</button>
+                    <button class="btn btn-outline-secondary btn-sm" id="clearBtn"><i class="bi bi-plus-lg me-1"></i>
+                        New Chat</button>
                 </div>
 
                 <div class="chat-history" id="chatHistory">
@@ -333,12 +410,160 @@
         const clearBtn = document.getElementById('clearBtn');
         const typingState = document.getElementById('typingState');
         const uploadForm = document.getElementById('uploadForm');
+        const newThreadBtn = document.getElementById('newThreadBtn');
+        const teacherThreadList = document.getElementById('teacherThreadList');
+        const conversationHistory = [];
+        let activeConversationId = null;
 
-        function addMessage(role, content) {
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function resetChatBody() {
+            chatHistory.innerHTML = '';
+            addMessage('ai', "Hi {{ user.name or 'Instructor' }}. I can analyze your class profile and suggest tailored lesson strategies. Ask for lesson plans, activity ideas, or topic-specific teaching guidance.");
+        }
+
+        async function loadConversations(preferId = null, reloadActiveConversation = true) {
+            try {
+                const res = await fetch('/dashboard/conversations?chat_type=teacher');
+                const data = await res.json();
+                const conversations = data.conversations || [];
+                renderThreadList(conversations);
+
+                const nextId = preferId || activeConversationId || (conversations[0] && conversations[0].id);
+                if (nextId && reloadActiveConversation) {
+                    await openConversation(nextId);
+                } else {
+                    if (!nextId) {
+                        activeConversationId = null;
+                        conversationHistory.length = 0;
+                        resetChatBody();
+                    }
+                }
+            } catch (_error) {
+                teacherThreadList.innerHTML = '<div class="thread-meta">Unable to load conversations.</div>';
+            }
+        }
+
+        function renderThreadList(conversations) {
+            if (!conversations.length) {
+                teacherThreadList.innerHTML = '<div class="thread-meta">No chats yet.</div>';
+                return;
+            }
+
+            teacherThreadList.innerHTML = conversations.map((thread) => {
+                const activeClass = thread.id === activeConversationId ? ' active' : '';
+                const pinned = thread.is_pinned ? '<i class="bi bi-pin-angle-fill text-primary"></i> ' : '';
+                return `
+                    <div class="thread-item${activeClass}" data-thread-id="${thread.id}">
+                        <div class="thread-title">${pinned}${escapeHtml(thread.title || 'New Chat')}</div>
+                        <div class="thread-meta">${thread.message_count || 0} messages</div>
+                        <div class="thread-actions">
+                            <button type="button" data-action="pin">${thread.is_pinned ? 'Unpin' : 'Pin'}</button>
+                            <button type="button" data-action="rename">Rename</button>
+                            <button type="button" data-action="delete">Delete</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            teacherThreadList.querySelectorAll('.thread-item').forEach((item) => {
+                const threadId = item.getAttribute('data-thread-id');
+                item.addEventListener('click', async () => {
+                    await openConversation(threadId);
+                    await loadConversations(threadId);
+                });
+
+                item.querySelectorAll('button').forEach((btn) => {
+                    btn.addEventListener('click', async (event) => {
+                        event.stopPropagation();
+                        const action = btn.getAttribute('data-action');
+                        if (action === 'rename') {
+                            const title = window.prompt('Rename conversation:');
+                            if (!title) return;
+                            await fetch(`/dashboard/conversations/${threadId}`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ chat_type: 'teacher', title })
+                            });
+                            await loadConversations(threadId);
+                        }
+                        if (action === 'pin') {
+                            const isPinned = btn.textContent.trim().toLowerCase() === 'pin';
+                            await fetch(`/dashboard/conversations/${threadId}`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ chat_type: 'teacher', is_pinned: isPinned })
+                            });
+                            await loadConversations(threadId);
+                        }
+                        if (action === 'delete') {
+                            if (!window.confirm('Delete this conversation?')) return;
+                            await fetch(`/dashboard/conversations/${threadId}?chat_type=teacher`, { method: 'DELETE' });
+                            if (threadId === activeConversationId) {
+                                activeConversationId = null;
+                                conversationHistory.length = 0;
+                                resetChatBody();
+                            }
+                            await loadConversations();
+                        }
+                    });
+                });
+            });
+        }
+
+        async function openConversation(conversationId) {
+            if (!conversationId) return;
+            const res = await fetch(`/dashboard/conversations/${conversationId}?chat_type=teacher`);
+            const data = await res.json();
+            if (!res.ok || !data.conversation) return;
+
+            activeConversationId = data.conversation.id;
+            conversationHistory.length = 0;
+            chatHistory.innerHTML = '';
+
+            const messages = data.messages || [];
+            if (!messages.length) {
+                resetChatBody();
+                return;
+            }
+
+            messages.forEach((msg) => {
+                const role = msg.role === 'user' ? 'user' : 'ai';
+                addMessage(role, msg.content || '', Boolean(msg.is_truncated));
+                conversationHistory.push({ role: msg.role, content: msg.content || '' });
+            });
+        }
+
+        async function createConversation() {
+            const res = await fetch('/dashboard/conversations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_type: 'teacher' })
+            });
+            const data = await res.json();
+            if (res.ok && data.conversation) {
+                activeConversationId = data.conversation.id;
+                conversationHistory.length = 0;
+                resetChatBody();
+                await loadConversations(activeConversationId);
+            }
+        }
+
+        function addMessage(role, content, isTruncated = false) {
             const msg = document.createElement('div');
             msg.className = `chat-msg ${role}`;
             if (role === 'ai') {
                 msg.innerHTML = marked.parse(content || 'No response generated.');
+                if (isTruncated) {
+                    msg.insertAdjacentHTML('beforeend', '<div class="truncated-badge">Response truncated</div>');
+                }
             } else {
                 msg.textContent = content;
             }
@@ -346,7 +571,7 @@
             chatHistory.scrollTop = chatHistory.scrollHeight;
         }
 
-        async function sendMessage(message) {
+        async function sendMessage(message, historyContext) {
             typingState.style.display = 'block';
             sendBtn.disabled = true;
 
@@ -354,7 +579,11 @@
                 const response = await fetch('/dashboard/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message })
+                    body: JSON.stringify({
+                        message,
+                        conversation_id: activeConversationId,
+                        chat_history: historyContext,
+                    })
                 });
                 const data = await response.json();
 
@@ -363,7 +592,13 @@
                     return;
                 }
 
-                addMessage('ai', data.response || 'No response generated.');
+                const aiResponse = data.response || 'No response generated.';
+                addMessage('ai', aiResponse, Boolean(data.response_truncated));
+                conversationHistory.push({ role: 'assistant', content: aiResponse });
+                if (data.conversation && data.conversation.id) {
+                    activeConversationId = data.conversation.id;
+                    await loadConversations(activeConversationId, false);
+                }
             } catch (error) {
                 addMessage('ai', 'Network error while contacting assistant.');
             } finally {
@@ -378,14 +613,20 @@
             if (!message) return;
 
             addMessage('user', message);
+            // Send prior turns so follow-up prompts remain topic-aware.
+            const historyContext = conversationHistory.slice(-6);
+            conversationHistory.push({ role: 'user', content: message });
             chatInput.value = '';
-            await sendMessage(message);
+            await sendMessage(message, historyContext);
         });
 
         clearBtn.addEventListener('click', () => {
-            chatHistory.innerHTML = '';
-            addMessage('ai', 'Chat cleared. Ask a new question anytime.');
+            createConversation();
         });
+
+        newThreadBtn.addEventListener('click', createConversation);
+
+        loadConversations();
 
         uploadForm.addEventListener('submit', async function (event) {
             event.preventDefault();

@@ -18,8 +18,9 @@ def get_llm(force_provider: Optional[str] = None) -> object:
         if google_api_key:
             return ChatGoogleGenerativeAI(
                 temperature=0,
-                model="gemini-3-flash",
+                model="gemini-3",
                 google_api_key=google_api_key,
+                enable_search=True,  # Enable search grounding for live web results
             )
         raise ValueError("GOOGLE_API_KEY must be configured for Google provider")
 
@@ -37,8 +38,9 @@ def get_llm(force_provider: Optional[str] = None) -> object:
     if google_api_key:
         return ChatGoogleGenerativeAI(
             temperature=0,
-            model="gemini-3-flash",
+            model="gemini-3",
             google_api_key=google_api_key,
+            enable_search=True,  # Enable search grounding for live web results
         )
 
     groq_api_key: Optional[str] = os.getenv("GROQ_API_KEY")
@@ -222,11 +224,28 @@ class AgentService:
         return any(signal in lowered for signal in retry_signals)
 
     @staticmethod
-    async def get_teacher_agent_response(message: str, stats_str: str, teacher_name: str = "Instructor", teacher_email: str = "") -> str:
+    async def get_teacher_agent_response(
+        message: str,
+        stats_str: str,
+        teacher_name: str = "Instructor",
+        teacher_email: str = "",
+        chat_history: list = None,
+    ) -> str:
         """Handles the Teacher AI Chatbot using an Agent with Perplexity-style research capabilities."""
         try:
             llm = get_llm()
             agent_tools = [search_uploaded_course_materials, search_web, search_youtube, send_email_to_student]
+
+            history_text = ""
+            if chat_history:
+                turns = chat_history[-6:]
+                formatted_turns = []
+                for turn in turns:
+                    role = turn.get("role", "user")
+                    content = str(turn.get("content", "")).strip()
+                    if content:
+                        formatted_turns.append(f"{role}: {content}")
+                history_text = "\n".join(formatted_turns)
 
             prompt = ChatPromptTemplate.from_messages([
                 ("system", (
@@ -238,7 +257,8 @@ class AgentService:
                     "3. Format your final report with clear H1/H2 headers, bold text, and numbered lists.\n"
                     "4. Include '### Recommended Videos' at the end of research answers.\n"
                     "5. Cite web sources directly: [Source](URL).\n\n"
-                    "Rules: Only respond directly to greetings like 'hi' or 'hello'. For all other requests, you MUST trigger your search tools."
+                    "Rules: Only respond directly to greetings like 'hi' or 'hello'. For all other requests, you MUST trigger your search tools.\n"
+                    "- Recent conversation context:\n{history_context}"
                 )),
                 ("human", "{input}"),
                 ("placeholder", "{agent_scratchpad}"),
@@ -258,6 +278,7 @@ class AgentService:
                 "stats": stats_str,
                 "teacher_name": teacher_name,
                 "teacher_email": teacher_email,
+                "history_context": history_text or "No prior context provided.",
             })
 
             return AgentService._coerce_output_text(result.get("output", "No response generated."))
@@ -270,6 +291,17 @@ class AgentService:
                     llm = get_llm(force_provider="groq")
                     agent_tools = [search_uploaded_course_materials, search_web, search_youtube, send_email_to_student]
 
+                    history_text = ""
+                    if chat_history:
+                        turns = chat_history[-6:]
+                        formatted_turns = []
+                        for turn in turns:
+                            role = turn.get("role", "user")
+                            content = str(turn.get("content", "")).strip()
+                            if content:
+                                formatted_turns.append(f"{role}: {content}")
+                        history_text = "\n".join(formatted_turns)
+
                     prompt = ChatPromptTemplate.from_messages([
                         ("system", (
                             "You are a world-class educational research assistant for {teacher_name} ({teacher_email}).\n"
@@ -280,7 +312,8 @@ class AgentService:
                             "3. Format your final report with clear H1/H2 headers, bold text, and numbered lists.\n"
                             "4. Include '### Recommended Videos' at the end of research answers.\n"
                             "5. Cite web sources directly: [Source](URL).\n\n"
-                            "Rules: Only respond directly to greetings like 'hi' or 'hello'. For all other requests, you MUST trigger your search tools."
+                            "Rules: Only respond directly to greetings like 'hi' or 'hello'. For all other requests, you MUST trigger your search tools.\n"
+                            "- Recent conversation context:\n{history_context}"
                         )),
                         ("human", "{input}"),
                         ("placeholder", "{agent_scratchpad}"),
@@ -300,6 +333,7 @@ class AgentService:
                         "stats": stats_str,
                         "teacher_name": teacher_name,
                         "teacher_email": teacher_email,
+                        "history_context": history_text or "No prior context provided.",
                     })
                     return AgentService._coerce_output_text(result.get("output", "No response generated."))
                 except Exception as fallback_exc:

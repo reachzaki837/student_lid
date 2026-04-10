@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
+from uuid import uuid4
 from beanie import Document, Indexed
-from pydantic import Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr
 from enum import Enum
-from typing import Optional
+from typing import Optional, List
 
 class UserRole(str, Enum):
     STUDENT = "student"
@@ -65,3 +66,24 @@ class Material(Document):
 
     class Settings:
         name = "materials"
+
+
+class ConversationMessage(BaseModel):
+    message_id: str = Field(default_factory=lambda: str(uuid4()))
+    role: str
+    content: str
+    is_truncated: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ConversationThread(Document):
+    owner_email: str
+    owner_role: str
+    title: str
+    is_pinned: bool = Field(default=False)
+    messages: List[ConversationMessage] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    class Settings:
+        name = "conversation_threads"

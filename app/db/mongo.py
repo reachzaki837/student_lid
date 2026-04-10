@@ -1,7 +1,7 @@
 from beanie import init_beanie
 from app.core.config import settings
 from app.models.user import (
-    User, Assessment, Class, Enrollment, Material
+    User, Assessment, Class, Enrollment, Material, ConversationThread
 )
 
 async def init_db():
@@ -12,6 +12,6 @@ async def init_db():
     await init_beanie(
         connection_string=connection_string,
         document_models=[
-            User, Assessment, Class, Enrollment, Material
+            User, Assessment, Class, Enrollment, Material, ConversationThread
         ]
     )

@@ -32,6 +32,12 @@
             flex-direction: column;
             justify-content: space-between;
             z-index: 10;
+            overflow: hidden;
+        }
+
+        .sidebar-scroll {
+            overflow-y: auto;
+            padding-bottom: 12px;
         }
 
         .logo-container {
@@ -79,6 +85,57 @@
         .nav-link-custom:hover:not(.active) {
             background-color: #f1f5f9;
             color: #0f172a;
+        }
+
+        .thread-panel {
+            margin: 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            background: #f8fafc;
+            padding: 10px;
+        }
+
+        .thread-item {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 8px;
+            margin-top: 8px;
+            background: #ffffff;
+            cursor: pointer;
+        }
+
+        .thread-item.active {
+            border-color: #2563eb;
+            background: #eff6ff;
+        }
+
+        .thread-title {
+            font-size: 12px;
+            color: #1e293b;
+            font-weight: 700;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .thread-meta {
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        .thread-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 6px;
+        }
+
+        .thread-actions button {
+            border: none;
+            background: transparent;
+            color: #64748b;
+            padding: 0;
+            font-size: 12px;
         }
 
         .user-profile {
@@ -182,6 +239,18 @@
             padding: 2px 6px;
             border-radius: 4px;
             font-family: monospace;
+        }
+
+        .truncated-badge {
+            display: inline-block;
+            margin-top: 8px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #92400e;
+            background: #fef3c7;
+            border: 1px solid #fde68a;
         }
 
         .chat-user {
@@ -292,7 +361,7 @@
 <body>
     <div class="dashboard-wrapper">
         <div class="sidebar">
-            <div>
+            <div class="sidebar-scroll">
                 <div class="logo-container">
                     <div class="logo-icon"><i class="bi bi-book"></i></div> StudentLID
                 </div>
@@ -311,6 +380,14 @@
                 <a href="/dashboard/settings" class="nav-link-custom">
                     <i class="bi bi-gear me-2"></i> Account Settings
                 </a>
+
+                <div class="thread-panel">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <div style="font-size:12px; font-weight:800; color:#334155;">Recent Chats</div>
+                        <button class="btn btn-sm btn-outline-primary py-0 px-2" id="newStudentThreadBtn">New</button>
+                    </div>
+                    <div id="studentThreadList"></div>
+                </div>
             </div>
 
             <div class="user-profile">
@@ -410,12 +487,26 @@
         const sendBtn = document.getElementById('sendBtn');
         const chatHistory = document.getElementById('chatHistory');
         const typingIndicator = document.getElementById('typingIndicator');
+        const studentThreadList = document.getElementById('studentThreadList');
+        const newStudentThreadBtn = document.getElementById('newStudentThreadBtn');
+
+        const localConversationHistory = [];
+        let activeConversationId = null;
 
         function scrollToBottom() {
             chatHistory.scrollTop = chatHistory.scrollHeight;
         }
 
-        function clearChat() {
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function resetTutorGreeting() {
             chatHistory.innerHTML = `
                 <div class="chat-msg chat-ai">Context cleared. How can I help you?</div>
                 <div class="typing-indicator" id="typingIndicator">
@@ -426,10 +517,158 @@
             `;
         }
 
+        function clearChat() {
+            createStudentConversation();
+        }
+
+        function renderTruncatedBadge(isTruncated) {
+            return isTruncated ? '<div class="truncated-badge">Response truncated</div>' : '';
+        }
+
+        function renderStudentThreadList(conversations) {
+            if (!conversations.length) {
+                studentThreadList.innerHTML = '<div class="thread-meta">No chats yet.</div>';
+                return;
+            }
+
+            studentThreadList.innerHTML = conversations.map((thread) => {
+                const activeClass = thread.id === activeConversationId ? ' active' : '';
+                const pinned = thread.is_pinned ? '<i class="bi bi-pin-angle-fill text-primary"></i> ' : '';
+                return `
+                    <div class="thread-item${activeClass}" data-thread-id="${thread.id}">
+                        <div class="thread-title">${pinned}${escapeHtml(thread.title || 'New Chat')}</div>
+                        <div class="thread-meta">${thread.message_count || 0} messages</div>
+                        <div class="thread-actions">
+                            <button type="button" data-action="pin">${thread.is_pinned ? 'Unpin' : 'Pin'}</button>
+                            <button type="button" data-action="rename">Rename</button>
+                            <button type="button" data-action="delete">Delete</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            studentThreadList.querySelectorAll('.thread-item').forEach((item) => {
+                const threadId = item.getAttribute('data-thread-id');
+                item.addEventListener('click', async () => {
+                    await openStudentConversation(threadId);
+                    await loadStudentConversations(threadId);
+                });
+
+                item.querySelectorAll('button').forEach((btn) => {
+                    btn.addEventListener('click', async (event) => {
+                        event.stopPropagation();
+                        const action = btn.getAttribute('data-action');
+
+                        if (action === 'rename') {
+                            const title = window.prompt('Rename conversation:');
+                            if (!title) return;
+                            await fetch(`/dashboard/conversations/${threadId}`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ chat_type: 'student', title })
+                            });
+                            await loadStudentConversations(threadId);
+                        }
+
+                        if (action === 'pin') {
+                            const isPinned = btn.textContent.trim().toLowerCase() === 'pin';
+                            await fetch(`/dashboard/conversations/${threadId}`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ chat_type: 'student', is_pinned: isPinned })
+                            });
+                            await loadStudentConversations(threadId);
+                        }
+
+                        if (action === 'delete') {
+                            if (!window.confirm('Delete this conversation?')) return;
+                            await fetch(`/dashboard/conversations/${threadId}?chat_type=student`, { method: 'DELETE' });
+                            if (threadId === activeConversationId) {
+                                activeConversationId = null;
+                                localConversationHistory.length = 0;
+                                resetTutorGreeting();
+                            }
+                            await loadStudentConversations();
+                        }
+                    });
+                });
+            });
+        }
+
+        async function loadStudentConversations(preferId = null, reloadActiveConversation = true) {
+            try {
+                const res = await fetch('/dashboard/conversations?chat_type=student');
+                const data = await res.json();
+                const conversations = data.conversations || [];
+                renderStudentThreadList(conversations);
+
+                const nextId = preferId || activeConversationId || (conversations[0] && conversations[0].id);
+                if (nextId && reloadActiveConversation) {
+                    await openStudentConversation(nextId);
+                } else {
+                    if (!nextId) {
+                        activeConversationId = null;
+                        localConversationHistory.length = 0;
+                        resetTutorGreeting();
+                    }
+                }
+            } catch (_error) {
+                studentThreadList.innerHTML = '<div class="thread-meta">Unable to load conversations.</div>';
+            }
+        }
+
+        async function openStudentConversation(conversationId) {
+            if (!conversationId) return;
+
+            const res = await fetch(`/dashboard/conversations/${conversationId}?chat_type=student`);
+            const data = await res.json();
+            if (!res.ok || !data.conversation) return;
+
+            activeConversationId = data.conversation.id;
+            localConversationHistory.length = 0;
+            chatHistory.innerHTML = '';
+
+            const messages = data.messages || [];
+            if (!messages.length) {
+                resetTutorGreeting();
+                return;
+            }
+
+            messages.forEach((msg) => {
+                const roleClass = msg.role === 'user' ? 'chat-user' : 'chat-ai';
+                const safeContent = msg.role === 'user'
+                    ? escapeHtml(msg.content || '')
+                    : `${marked.parse(msg.content || '')}${renderTruncatedBadge(Boolean(msg.is_truncated))}`;
+                chatHistory.insertAdjacentHTML('beforeend', `<div class="chat-msg ${roleClass}">${safeContent}</div>`);
+                localConversationHistory.push({ role: msg.role, content: msg.content || '' });
+            });
+
+            chatHistory.appendChild(typingIndicator);
+            typingIndicator.style.display = 'none';
+            scrollToBottom();
+        }
+
+        async function createStudentConversation() {
+            const res = await fetch('/dashboard/conversations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_type: 'student' })
+            });
+            const data = await res.json();
+            if (res.ok && data.conversation) {
+                activeConversationId = data.conversation.id;
+                localConversationHistory.length = 0;
+                resetTutorGreeting();
+                await loadStudentConversations(activeConversationId);
+            }
+        }
+
         chatForm.addEventListener('submit', async function (e) {
             e.preventDefault();
             const message = inputField.value.trim();
             if (!message) return;
+
+            localConversationHistory.push({ role: 'user', content: message });
 
             // Add user message to UI
             const userMsgHtml = `<div class="chat-msg chat-user">${message.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`;
@@ -448,7 +687,11 @@
                 const response = await fetch('/dashboard/chat_student', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: message })
+                    body: JSON.stringify({
+                        message: message,
+                        conversation_id: activeConversationId,
+                        chat_history: localConversationHistory.slice(-6),
+                    })
                 });
 
                 const raw = await response.text();
@@ -462,11 +705,19 @@
 
                 if (response.ok) {
                     const parsedHtml = marked.parse(data.response);
-                    chatHistory.insertAdjacentHTML('beforeend', `<div class="chat-msg chat-ai">${parsedHtml}</div>`);
+                    const truncatedBadge = renderTruncatedBadge(Boolean(data.response_truncated));
+                    chatHistory.insertAdjacentHTML('beforeend', `<div class="chat-msg chat-ai">${parsedHtml}${truncatedBadge}</div>`);
+                    localConversationHistory.push({ role: 'assistant', content: data.response || '' });
+                    if (data.conversation && data.conversation.id) {
+                        activeConversationId = data.conversation.id;
+                        await loadStudentConversations(activeConversationId, false);
+                    }
                 } else {
+                    localConversationHistory.pop();
                     chatHistory.insertAdjacentHTML('beforeend', `<div class="chat-msg chat-ai text-danger">Error (${response.status}): ${data.error || 'Server error occurred.'}</div>`);
                 }
             } catch (error) {
+                localConversationHistory.pop();
                 typingIndicator.style.display = 'none';
                 chatHistory.insertAdjacentHTML('beforeend', `<div class="chat-msg chat-ai text-danger">Network error connecting to the AI tutor.</div>`);
             }
@@ -478,6 +729,9 @@
         });
 
         // --- UPLOAD LOGIC ---
+        newStudentThreadBtn.addEventListener('click', createStudentConversation);
+        loadStudentConversations();
+
         document.getElementById('uploadForm').addEventListener('submit', async function (e) {
             e.preventDefault();
             const btn = document.getElementById('uploadBtn');

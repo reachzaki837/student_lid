@@ -1,5 +1,4 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
 from app.models.user import UserRole
 
 # Shared properties

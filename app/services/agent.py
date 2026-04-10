@@ -3,13 +3,31 @@ import re
 import logging
 from typing import Optional
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
 from langchain_groq import ChatGroq
 from langchain_classic.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
+from groq import APIError as GroqAPIError
+from google.genai.errors import APIError as GoogleGenAIAPIError
+from google.genai.errors import ClientError as GoogleGenAIClientError
+from google.genai.errors import ServerError as GoogleGenAIServerError
 from app.services.rag import RAGService
 
 logger = logging.getLogger(__name__)
+GOOGLE_MODEL = os.getenv("GOOGLE_MODEL", "gemini-2.5-flash")
+AGENT_EXCEPTIONS = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    KeyError,
+    AttributeError,
+    ChatGoogleGenerativeAIError,
+    GoogleGenAIAPIError,
+    GoogleGenAIClientError,
+    GoogleGenAIServerError,
+    GroqAPIError,
+)
 
 
 # Initialize Google Gemini Model
@@ -19,9 +37,8 @@ def get_llm(force_provider: Optional[str] = None) -> object:
         if google_api_key:
             return ChatGoogleGenerativeAI(
                 temperature=0,
-                model="gemini-3",
+                model=GOOGLE_MODEL,
                 google_api_key=google_api_key,
-                enable_search=True,  # Enable search grounding for live web results
             )
         raise ValueError("GOOGLE_API_KEY must be configured for Google provider")
 
@@ -39,9 +56,8 @@ def get_llm(force_provider: Optional[str] = None) -> object:
     if google_api_key:
         return ChatGoogleGenerativeAI(
             temperature=0,
-            model="gemini-3",
+            model=GOOGLE_MODEL,
             google_api_key=google_api_key,
-            enable_search=True,  # Enable search grounding for live web results
         )
 
     groq_api_key: Optional[str] = os.getenv("GROQ_API_KEY")
@@ -354,7 +370,7 @@ class AgentService:
             })
 
             return AgentService._coerce_output_text(result.get("output", "No response generated."))
-        except Exception as e:
+        except AGENT_EXCEPTIONS as e:
             logger.exception("Teacher agent generation failed")
 
             if AgentService._should_retry_with_groq(e):
@@ -408,7 +424,7 @@ class AgentService:
                         "history_context": history_text or "No prior context provided.",
                     })
                     return AgentService._coerce_output_text(result.get("output", "No response generated."))
-                except Exception as fallback_exc:
+                except AGENT_EXCEPTIONS as fallback_exc:
                     logger.exception("Teacher Groq fallback failed")
                     return AgentService._friendly_agent_error(fallback_exc)
 
@@ -488,77 +504,22 @@ class AgentService:
             })
 
             return AgentService._coerce_output_text(result.get("output", "No response generated."))
-        except Exception as e:
+        except AGENT_EXCEPTIONS as e:
             logger.exception("Student tutor agent generation failed")
 
             if AgentService._should_retry_with_groq(e):
                 try:
-                    logger.warning("Retrying student tutor with Groq fallback")
-                    llm = get_llm(force_provider="groq")
-                    agent_tools = [search_uploaded_course_materials, search_web, search_youtube]
-
-                    history_text = ""
-                    if chat_history:
-                        turns = chat_history[-6:]
-                        formatted_turns = []
-                        for turn in turns:
-                            role = turn.get("role", "user")
-                            content = str(turn.get("content", "")).strip()
-                            if content:
-                                formatted_turns.append(f"{role}: {content}")
-                        history_text = "\n".join(formatted_turns)
-
-                    prompt = ChatPromptTemplate.from_messages([
-                        ("system", (
-                            "You are a world-class 1-on-1 AI Study Tutor and Researcher, acting like a high-end research engine (Perplexity style).\n"
-                            "CORE INSTRUCTION: You MUST use your tools (search_web, search_youtube, search_uploaded_course_materials) for EVERY user query, even if you think you know the answer. Gather deep research first.\n\n"
-                            "STUDENT PROFILE:\n"
-                            "- VARK: {vark_style} | HM: {hm_style}\n\n"
-                            "YOUR MISSION:\n"
-                            "1. DEEP DIVE: For every topic, search the web, course files, and YouTube.\n"
-                            "2. PERPLEXITY STYLE: Output answers in a structured, clean format with citations.\n"
-                            "3. VISUALS & VIDEOS: Always end by suggesting '### Watch & Learn' with YouTube video links.\n"
-                            "4. STYLE ADAPTATION: Adapt your response to their learning style.\n\n"
-                            "Rules:\n"
-                            "- Use headers, bold text, and numbered lists.\n"
-                            "- Cite web sources directly.\n"
-                            "- Warm greetings only for the first message.\n"
-                            "- Recent conversation context:\n{history_context}"
-                        )),
-                        ("human", "{input}"),
-                        ("placeholder", "{agent_scratchpad}"),
-                    ])
-
-                    agent = create_tool_calling_agent(llm, agent_tools, prompt)
-                    executor = AgentExecutor(
-                        agent=agent,
-                        tools=agent_tools,
-                        verbose=True,
-                        handle_parsing_errors=True,
-                        max_iterations=4,
+                    logger.warning("Retrying student tutor with Groq direct fallback")
+                    return await AgentService._direct_student_response(
+                        message=message,
+                        vark_style=vark_style,
+                        hm_style=hm_style,
+                        history_text=history_text,
+                        force_provider="groq",
                     )
-
-                    result = await executor.ainvoke({
-                        "input": message,
-                        "vark_style": vark_style,
-                        "hm_style": hm_style,
-                        "history_context": history_text or "No prior context provided.",
-                    })
-                    return AgentService._coerce_output_text(result.get("output", "No response generated."))
-                except Exception as fallback_exc:
-                    logger.exception("Student Groq fallback failed")
-                    try:
-                        logger.warning("Falling back to direct student response after Groq tool failure")
-                        return await AgentService._direct_student_response(
-                            message=message,
-                            vark_style=vark_style,
-                            hm_style=hm_style,
-                            history_text=history_text,
-                            force_provider="groq",
-                        )
-                    except Exception:
-                        logger.exception("Student direct Groq fallback failed")
-                        return AgentService._friendly_agent_error(fallback_exc)
+                except AGENT_EXCEPTIONS as fallback_exc:
+                    logger.exception("Student direct Groq fallback failed")
+                    return AgentService._friendly_agent_error(fallback_exc)
 
             try:
                 logger.warning("Falling back to direct student response after tool-calling issue")
@@ -568,6 +529,6 @@ class AgentService:
                     hm_style=hm_style,
                     history_text=history_text,
                 )
-            except Exception:
+            except AGENT_EXCEPTIONS:
                 logger.exception("Student direct fallback failed")
                 return AgentService._friendly_agent_error(e)

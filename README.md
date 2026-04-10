@@ -5,6 +5,7 @@ An AI-powered educational platform designed to identify how students learn best 
 By combining established pedagogical frameworks (VARK and Honey & Mumford) with cutting-edge Generative AI, StudentLID transforms a simple quiz into a personalised learning engine.
 
 ---
+Access the Web Application: [Click here](https://www.studentlid.app/)
 
 ## ❓ Why is this needed? (The Problem)
 

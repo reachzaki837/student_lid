@@ -187,6 +187,14 @@ class AgentService:
     def _friendly_agent_error(exc: Exception) -> str:
         message = str(exc)
         lowered = message.lower()
+        if (
+            "503" in lowered
+            or "unavailable" in lowered
+            or "high demand" in lowered
+            or "overloaded" in lowered
+            or "service unavailable" in lowered
+        ):
+            return "AI service is temporarily busy due to high demand. Please retry in about a minute."
         if "429" in lowered or "resource_exhausted" in lowered or "quota" in lowered:
             return "AI service is temporarily rate-limited. Please retry in about a minute."
         if "no results found" in lowered:
@@ -198,12 +206,18 @@ class AgentService:
         lowered = str(exc).lower()
         retry_signals = (
             "429",
+            "503",
             "quota",
             "resource_exhausted",
             "not found",
             "models/",
             "gemini",
             "rate limit",
+            "unavailable",
+            "high demand",
+            "service unavailable",
+            "temporarily unavailable",
+            "overloaded",
         )
         return any(signal in lowered for signal in retry_signals)
 

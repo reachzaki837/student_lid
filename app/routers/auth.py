@@ -46,6 +46,7 @@ async def login(
     request: Request,
     email: Annotated[str, Form()],
     password: Annotated[str, Form()],
+    remember_me: Annotated[Optional[str], Form()] = None,
 ):
     user = await AuthService.authenticate_user(email=email, password=password)
 
@@ -57,12 +58,13 @@ async def login(
         )
 
     access_token = create_access_token(subject=user.email)
+    max_age = 7 * 24 * 60 * 60 if remember_me == "on" else 1800
     response = RedirectResponse(url="/dashboard", status_code=status.HTTP_302_FOUND)
     response.set_cookie(
         key="access_token",
         value=f"Bearer {access_token}",
         httponly=True,
-        max_age=1800,
+        max_age=max_age,
         samesite="lax",
     )
     return response

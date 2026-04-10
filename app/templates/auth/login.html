@@ -114,6 +114,23 @@
             font-weight: 500;
         }
 
+        .remember-me-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #64748b;
+            font-weight: 500;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .remember-me-label input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: #2563eb;
+            cursor: pointer;
+        }
+
         .extra-links a {
             color: #2563eb;
             text-decoration: none;
@@ -305,7 +322,10 @@
             </div>
 
             <div class="extra-links">
-                <span>Remember me</span>
+                <label class="remember-me-label" for="rememberMe">
+                    <input type="checkbox" id="rememberMe" name="remember_me" value="on">
+                    <span>Remember me</span>
+                </label>
                 <a href="/auth/forgot-password">Forgot password?</a>
             </div>
 

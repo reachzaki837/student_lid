@@ -3,6 +3,7 @@ venv/
 __pycache__/
 *.pyc
 .env
+Swagger_ui.html
 
 # AI Agent Configuration
 AGENTS.md

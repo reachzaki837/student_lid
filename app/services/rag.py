@@ -2,7 +2,7 @@ import os
 import io
 import base64
 import networkx as nx
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from PyPDF2 import PdfReader
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -18,7 +18,43 @@ os.makedirs(INDEX_DIR, exist_ok=True)
 
 # Google Gemini Embeddings (API-based, lightweight deployment)
 # Important: This avoids the massive ~5GB sentence-transformers dependency for Vercel.
-embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=settings.GOOGLE_API_KEY)
+# Try current embedding model first, then fall back for older projects/keys.
+EMBEDDING_MODELS = tuple(dict.fromkeys([
+    os.getenv("GOOGLE_EMBEDDING_MODEL", "models/text-embedding-004"),
+    "models/embedding-001",
+]))
+_ACTIVE_EMBEDDING_MODEL: Optional[str] = None
+_ACTIVE_EMBEDDINGS: Optional[GoogleGenerativeAIEmbeddings] = None
+
+
+def _is_embedding_not_found_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "404" in message and ("not_found" in message or "not found" in message)
+
+
+def _set_active_embeddings(model_name: str) -> GoogleGenerativeAIEmbeddings:
+    global _ACTIVE_EMBEDDING_MODEL, _ACTIVE_EMBEDDINGS
+    _ACTIVE_EMBEDDING_MODEL = model_name
+    _ACTIVE_EMBEDDINGS = GoogleGenerativeAIEmbeddings(
+        model=model_name,
+        google_api_key=settings.GOOGLE_API_KEY,
+    )
+    return _ACTIVE_EMBEDDINGS
+
+
+def _get_active_embeddings() -> GoogleGenerativeAIEmbeddings:
+    if _ACTIVE_EMBEDDINGS is None:
+        return _set_active_embeddings(EMBEDDING_MODELS[0])
+    return _ACTIVE_EMBEDDINGS
+
+
+def _switch_to_fallback_embedding_model() -> bool:
+    current = _ACTIVE_EMBEDDING_MODEL or EMBEDDING_MODELS[0]
+    for candidate in EMBEDDING_MODELS:
+        if candidate != current:
+            _set_active_embeddings(candidate)
+            return True
+    return False
 
 SUPPORTED_UPLOAD_EXTENSIONS = {
     ".pdf",
@@ -98,6 +134,9 @@ class RAGService:
     async def process_upload(file_bytes: bytes, filename: str, uploader_email: str) -> tuple[bool, str]:
         """Processes an uploaded file, extracts text, chunks it, and adds to FAISS index."""
         try:
+            if not settings.GOOGLE_API_KEY:
+                return False, "GOOGLE_API_KEY is required for document uploads."
+
             extension = os.path.splitext(filename.lower())[1]
             if extension not in SUPPORTED_UPLOAD_EXTENSIONS:
                 supported = ", ".join(sorted(SUPPORTED_UPLOAD_EXTENSIONS))
@@ -143,14 +182,23 @@ class RAGService:
             ]
             
             # 3. Add to FAISS Vector Store
+            def _upsert_docs_with_embeddings(emb: GoogleGenerativeAIEmbeddings) -> None:
+                try:
+                    vectorstore = FAISS.load_local(INDEX_DIR, emb, allow_dangerous_deserialization=True)
+                    vectorstore.add_documents(docs)
+                    vectorstore.save_local(INDEX_DIR)
+                except Exception:
+                    # Create a new index if it doesn't exist
+                    vectorstore = FAISS.from_documents(docs, emb)
+                    vectorstore.save_local(INDEX_DIR)
+
             try:
-                vectorstore = FAISS.load_local(INDEX_DIR, embeddings, allow_dangerous_deserialization=True)
-                vectorstore.add_documents(docs)
-                vectorstore.save_local(INDEX_DIR)
-            except Exception:
-                # Create a new index if it doesn't exist
-                vectorstore = FAISS.from_documents(docs, embeddings)
-                vectorstore.save_local(INDEX_DIR)
+                _upsert_docs_with_embeddings(_get_active_embeddings())
+            except Exception as exc:
+                if _is_embedding_not_found_error(exc) and _switch_to_fallback_embedding_model():
+                    _upsert_docs_with_embeddings(_get_active_embeddings())
+                else:
+                    raise
                 
             return True, "ok"
         except Exception as e:
@@ -163,10 +211,22 @@ class RAGService:
         try:
             if not os.path.exists(os.path.join(INDEX_DIR, "index.faiss")):
                 return "No specific course materials found."
-            
-            vectorstore = FAISS.load_local(INDEX_DIR, embeddings, allow_dangerous_deserialization=True)
-            results = vectorstore.similarity_search(query, k=top_k)
-            context = "\n\n".join([f"Source: {res.metadata.get('source', 'Unknown')}\nContent: {res.page_content}" for res in results])
+
+            def _query_with_embeddings(emb: GoogleGenerativeAIEmbeddings) -> str:
+                vectorstore = FAISS.load_local(INDEX_DIR, emb, allow_dangerous_deserialization=True)
+                results = vectorstore.similarity_search(query, k=top_k)
+                return "\n\n".join(
+                    [f"Source: {res.metadata.get('source', 'Unknown')}\nContent: {res.page_content}" for res in results]
+                )
+
+            try:
+                context = _query_with_embeddings(_get_active_embeddings())
+            except Exception as exc:
+                if _is_embedding_not_found_error(exc) and _switch_to_fallback_embedding_model():
+                    context = _query_with_embeddings(_get_active_embeddings())
+                else:
+                    raise
+
             return context
         except Exception as e:
             print(f"FAISS Query Error: {e}")

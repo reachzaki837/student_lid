@@ -2,8 +2,7 @@ import os
 import io
 import base64
 from zipfile import BadZipFile
-import networkx as nx
-from typing import List, Dict, Any, Optional
+from typing import Optional
 from PyPDF2 import PdfReader
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -19,43 +18,18 @@ os.makedirs(INDEX_DIR, exist_ok=True)
 
 # Google Gemini Embeddings (API-based, lightweight deployment)
 # Important: This avoids the massive ~5GB sentence-transformers dependency for Vercel.
-# Try current embedding model first, then fall back for older projects/keys.
-EMBEDDING_MODELS = tuple(dict.fromkeys([
-    os.getenv("GOOGLE_EMBEDDING_MODEL", "models/text-embedding-004"),
-    "models/embedding-001",
-]))
-_ACTIVE_EMBEDDING_MODEL: Optional[str] = None
-_ACTIVE_EMBEDDINGS: Optional[GoogleGenerativeAIEmbeddings] = None
+EMBEDDING_MODEL = os.getenv("GOOGLE_EMBEDDING_MODEL", "models/text-embedding-004")
 
 
-def _is_embedding_not_found_error(exc: Exception) -> bool:
-    message = str(exc).lower()
-    return "404" in message and ("not_found" in message or "not found" in message)
-
-
-def _set_active_embeddings(model_name: str) -> GoogleGenerativeAIEmbeddings:
-    global _ACTIVE_EMBEDDING_MODEL, _ACTIVE_EMBEDDINGS
-    _ACTIVE_EMBEDDING_MODEL = model_name
-    _ACTIVE_EMBEDDINGS = GoogleGenerativeAIEmbeddings(
+def _create_embeddings(model_name: str) -> GoogleGenerativeAIEmbeddings:
+    return GoogleGenerativeAIEmbeddings(
         model=model_name,
         google_api_key=settings.GOOGLE_API_KEY,
     )
-    return _ACTIVE_EMBEDDINGS
 
 
 def _get_active_embeddings() -> GoogleGenerativeAIEmbeddings:
-    if _ACTIVE_EMBEDDINGS is None:
-        return _set_active_embeddings(EMBEDDING_MODELS[0])
-    return _ACTIVE_EMBEDDINGS
-
-
-def _switch_to_fallback_embedding_model() -> bool:
-    current = _ACTIVE_EMBEDDING_MODEL or EMBEDDING_MODELS[0]
-    for candidate in EMBEDDING_MODELS:
-        if candidate != current:
-            _set_active_embeddings(candidate)
-            return True
-    return False
+    return _create_embeddings(EMBEDDING_MODEL)
 
 SUPPORTED_UPLOAD_EXTENSIONS = {
     ".pdf",
@@ -209,10 +183,14 @@ class RAGService:
             try:
                 _upsert_docs_with_embeddings(_get_active_embeddings())
             except Exception as exc:
-                if _is_embedding_not_found_error(exc) and _switch_to_fallback_embedding_model():
-                    _upsert_docs_with_embeddings(_get_active_embeddings())
-                else:
-                    raise
+                message = str(exc).lower()
+                if "404" in message and ("not_found" in message or "not found" in message):
+                    raise RuntimeError(
+                        f"Embedding model '{EMBEDDING_MODEL}' is unavailable. "
+                        "Set GOOGLE_EMBEDDING_MODEL to a supported Gemini embedding model such as "
+                        "models/text-embedding-004."
+                    ) from exc
+                raise
                 
             return True, "ok"
         except Exception as e:
@@ -233,13 +211,7 @@ class RAGService:
                     [f"Source: {res.metadata.get('source', 'Unknown')}\nContent: {res.page_content}" for res in results]
                 )
 
-            try:
-                context = _query_with_embeddings(_get_active_embeddings())
-            except Exception as exc:
-                if _is_embedding_not_found_error(exc) and _switch_to_fallback_embedding_model():
-                    context = _query_with_embeddings(_get_active_embeddings())
-                else:
-                    raise
+            context = _query_with_embeddings(_get_active_embeddings())
 
             return context
         except Exception as e:

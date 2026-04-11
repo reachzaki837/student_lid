@@ -1,6 +1,7 @@
 import os
 import io
 import base64
+from zipfile import BadZipFile
 import networkx as nx
 from typing import List, Dict, Any, Optional
 from PyPDF2 import PdfReader
@@ -155,8 +156,21 @@ class RAGService:
                     from docx import Document as DocxDocument
                 except ImportError as exc:
                     raise ValueError("python-docx is required to process .docx files") from exc
-
-                doc = DocxDocument(io.BytesIO(file_bytes))
+                try:
+                    doc = DocxDocument(io.BytesIO(file_bytes))
+                except BadZipFile:
+                    return False, (
+                        "Invalid DOCX file: this file is not a valid Word .docx package. "
+                        "Please re-save/export it as .docx and upload again."
+                    )
+                except Exception as exc:
+                    docx_error = str(exc).lower()
+                    if "package not found" in docx_error or "file is not a zip file" in docx_error:
+                        return False, (
+                            "Invalid DOCX file: this file is not a valid Word .docx package. "
+                            "Please re-save/export it as .docx and upload again."
+                        )
+                    raise
                 content = "\n".join(paragraph.text for paragraph in doc.paragraphs if paragraph.text)
             elif extension in IMAGE_EXTENSIONS:
                 content = await RAGService._extract_text_from_image(file_bytes, filename)

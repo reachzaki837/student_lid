@@ -635,7 +635,11 @@ async def upload_document(file: UploadFile = File(...), user: User = Depends(get
     if success:
         return {"filename": file.filename, "status": "success"}
 
-    status_code = 400 if "Unsupported file type" in message or "No readable content" in message else 500
+    status_code = 400 if (
+        "Unsupported file type" in message
+        or "No readable content" in message
+        or "Invalid DOCX file" in message
+    ) else 500
     return JSONResponse(status_code=status_code, content={"error": message or "Failed to process document"})
 
 @router.get("/dashboard/tutor", response_class=HTMLResponse)

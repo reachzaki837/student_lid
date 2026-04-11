@@ -2,7 +2,6 @@
 
 > **Route:** `/auth/login`
 > **Module:** Authentication
-> **Generated:** 2026-04-10
 
 ## Overview
 

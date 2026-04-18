@@ -9,3 +9,9 @@ Swagger_ui.html
 AGENTS.md
 .agents/
 CLAUDE.md
+
+# Graphify generated artifacts
+.graphify*
+graphify-out/
+
+.claude/

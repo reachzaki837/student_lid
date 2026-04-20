@@ -20,19 +20,19 @@ The page uses a centered single-card layout on a white background. It is designe
 │                                     │
 │  [  Continue with Google  ]         │
 │                                     │
-│  ─────────── or ───────────          │
+│  ─────────── or ───────────         │
 │                                     │
 │  Email Address                      │
-│  [___________________________]       │
+│  [___________________________]      │
 │                                     │
 │  Password                           │
-│  [___________________________]       │
+│  [___________________________]      │
 │                                     │
 │  [Remember me]    [Forgot password?]│
 │                                     │
 │  [        Sign In →        ]        │
 │                                     │
-│  Don't have an account? Register...  │
+│  Don't have an account? Register... │
 └─────────────────────────────────────┘
 ```
 

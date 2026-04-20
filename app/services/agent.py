@@ -1,6 +1,7 @@
 import os
 import re
 import logging
+import asyncio
 from typing import Optional
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
@@ -16,12 +17,14 @@ from app.services.rag import RAGService
 
 logger = logging.getLogger(__name__)
 GOOGLE_MODEL = os.getenv("GOOGLE_MODEL", "gemini-2.5-flash")
+AGENT_EXEC_TIMEOUT_SECONDS = float(os.getenv("AGENT_EXEC_TIMEOUT_SECONDS", "45"))
 AGENT_EXCEPTIONS = (
     RuntimeError,
     ValueError,
     TypeError,
     KeyError,
     AttributeError,
+    TimeoutError,
     ChatGoogleGenerativeAIError,
     GoogleGenAIAPIError,
     GoogleGenAIClientError,
@@ -81,7 +84,7 @@ def search_web(query: str) -> str:
         from ddgs.exceptions import DDGSException, RatelimitException, TimeoutException
 
         results = []
-        with DDGS() as ddgs:
+        with DDGS(timeout=8) as ddgs:
             for r in ddgs.text(query, max_results=3):
                 results.append(r)
                 
@@ -117,9 +120,9 @@ def search_youtube(query: str) -> str:
         from ddgs import DDGS
         from ddgs.exceptions import DDGSException, RatelimitException, TimeoutException
         results = []
-        with DDGS() as ddgs:
+        with DDGS(timeout=8) as ddgs:
             # Use 'videos' method from ddgs to find YouTube content
-            for r in ddgs.videos(query, max_results=4):
+            for r in ddgs.videos(query, max_results=3):
                 results.append(r)
         
         if not results:
@@ -247,6 +250,8 @@ class AgentService:
     def _friendly_agent_error(exc: Exception) -> str:
         message = str(exc)
         lowered = message.lower()
+        if "timed out" in lowered or "timeout" in lowered:
+            return "The assistant timed out while gathering sources. Please retry with a narrower request or ask for a direct explanation first."
         if "failed to call a function" in lowered or "failed_generation" in lowered:
             return "I hit a temporary tool-calling issue. Please try again or ask a fuller question like 'Explain photosynthesis with examples'."
         if (
@@ -312,6 +317,41 @@ class AgentService:
         return AgentService._coerce_output_text(getattr(direct_result, "content", direct_result))
 
     @staticmethod
+    async def _direct_teacher_response(
+        message: str,
+        stats_str: str,
+        teacher_name: str,
+        teacher_email: str,
+        history_text: str,
+        force_provider: Optional[str] = None,
+    ) -> str:
+        """Fallback response path that avoids tool-calling and answers directly."""
+        llm = get_llm(force_provider=force_provider) if force_provider else get_llm()
+        direct_prompt = ChatPromptTemplate.from_messages([
+            ("system", (
+                "You are an AI classroom assistant for {teacher_name} ({teacher_email}).\n"
+                "Use classroom context stats: {stats}.\n"
+                "Answer directly without tool usage unless explicitly needed.\n"
+                "Keep answers practical, concise, and actionable for teachers."
+            )),
+            ("human", "Recent conversation:\n{history_context}\n\nQuestion: {input}"),
+        ])
+        chain = direct_prompt | llm
+        direct_result = await chain.ainvoke({
+            "input": message,
+            "stats": stats_str,
+            "teacher_name": teacher_name,
+            "teacher_email": teacher_email,
+            "history_context": history_text or "No prior context provided.",
+        })
+        return AgentService._coerce_output_text(getattr(direct_result, "content", direct_result))
+
+    @staticmethod
+    async def _invoke_executor_with_timeout(executor: AgentExecutor, payload: dict) -> dict:
+        """Protect serverless requests from long-running tool chains."""
+        return await asyncio.wait_for(executor.ainvoke(payload), timeout=AGENT_EXEC_TIMEOUT_SECONDS)
+
+    @staticmethod
     async def get_teacher_agent_response(
         message: str,
         stats_str: str,
@@ -321,8 +361,8 @@ class AgentService:
     ) -> str:
         """Handles the Teacher AI Chatbot using an Agent with Perplexity-style research capabilities."""
         try:
-            llm = get_llm()
-            agent_tools = [search_uploaded_course_materials, search_web, search_youtube, send_email_to_student]
+            if AgentService._is_simple_greeting(message):
+                return "Hello! I can help with lesson plans, interventions, and classroom research."
 
             history_text = ""
             if chat_history:
@@ -335,17 +375,29 @@ class AgentService:
                         formatted_turns.append(f"{role}: {content}")
                 history_text = "\n".join(formatted_turns)
 
+            if not AgentService._requires_research_tools(message):
+                return await AgentService._direct_teacher_response(
+                    message=message,
+                    stats_str=stats_str,
+                    teacher_name=teacher_name,
+                    teacher_email=teacher_email,
+                    history_text=history_text,
+                )
+
+            llm = get_llm()
+            agent_tools = [search_uploaded_course_materials, search_web, search_youtube, send_email_to_student]
+
             prompt = ChatPromptTemplate.from_messages([
                 ("system", (
                     "You are a world-class educational research assistant for {teacher_name} ({teacher_email}).\n"
-                    "Your mission is to provide deep, Perplexity-style classroom insights using every tool in your belt.\n\n"
+                    "Your mission is to provide deep, Perplexity-style classroom insights using tools when needed.\n\n"
                     "INSTRUCTIONS:\n"
-                    "1. For any conceptual or research question, ALWAYS use search_web, search_youtube, and search_uploaded_course_materials to gather data first.\n"
+                    "1. Use tools selectively: if the user asks for current events, sources, videos, or uploaded material context, call one or more relevant tools.\n"
                     "2. Use stats to personalize advice: {stats}\n"
                     "3. Format your final report with clear H1/H2 headers, bold text, and numbered lists.\n"
                     "4. Include '### Recommended Videos' at the end of research answers.\n"
                     "5. Cite web sources directly: [Source](URL).\n\n"
-                    "Rules: Only respond directly to greetings like 'hi' or 'hello'. For all other requests, you MUST trigger your search tools.\n"
+                    "Rules: For planning, explanation, and coaching requests that do not require fresh sources, answer directly without tools.\n"
                     "- Recent conversation context:\n{history_context}"
                 )),
                 ("human", "{input}"),
@@ -358,10 +410,11 @@ class AgentService:
                 tools=agent_tools,
                 verbose=True,
                 handle_parsing_errors=True,
-                max_iterations=5,
+                max_iterations=3,
+                max_execution_time=20,
             )
 
-            result = await executor.ainvoke({
+            result = await AgentService._invoke_executor_with_timeout(executor, {
                 "input": message,
                 "stats": stats_str,
                 "teacher_name": teacher_name,
@@ -375,55 +428,15 @@ class AgentService:
 
             if AgentService._should_retry_with_groq(e):
                 try:
-                    logger.warning("Retrying teacher agent with Groq fallback")
-                    llm = get_llm(force_provider="groq")
-                    agent_tools = [search_uploaded_course_materials, search_web, search_youtube, send_email_to_student]
-
-                    history_text = ""
-                    if chat_history:
-                        turns = chat_history[-6:]
-                        formatted_turns = []
-                        for turn in turns:
-                            role = turn.get("role", "user")
-                            content = str(turn.get("content", "")).strip()
-                            if content:
-                                formatted_turns.append(f"{role}: {content}")
-                        history_text = "\n".join(formatted_turns)
-
-                    prompt = ChatPromptTemplate.from_messages([
-                        ("system", (
-                            "You are a world-class educational research assistant for {teacher_name} ({teacher_email}).\n"
-                            "Your mission is to provide deep, Perplexity-style classroom insights using every tool in your belt.\n\n"
-                            "INSTRUCTIONS:\n"
-                            "1. For any conceptual or research question, ALWAYS use search_web, search_youtube, and search_uploaded_course_materials to gather data first.\n"
-                            "2. Use stats to personalize advice: {stats}\n"
-                            "3. Format your final report with clear H1/H2 headers, bold text, and numbered lists.\n"
-                            "4. Include '### Recommended Videos' at the end of research answers.\n"
-                            "5. Cite web sources directly: [Source](URL).\n\n"
-                            "Rules: Only respond directly to greetings like 'hi' or 'hello'. For all other requests, you MUST trigger your search tools.\n"
-                            "- Recent conversation context:\n{history_context}"
-                        )),
-                        ("human", "{input}"),
-                        ("placeholder", "{agent_scratchpad}"),
-                    ])
-
-                    agent = create_tool_calling_agent(llm, agent_tools, prompt)
-                    executor = AgentExecutor(
-                        agent=agent,
-                        tools=agent_tools,
-                        verbose=True,
-                        handle_parsing_errors=True,
-                        max_iterations=5,
+                    logger.warning("Retrying teacher response with Groq direct fallback")
+                    return await AgentService._direct_teacher_response(
+                        message=message,
+                        stats_str=stats_str,
+                        teacher_name=teacher_name,
+                        teacher_email=teacher_email,
+                        history_text=history_text,
+                        force_provider="groq",
                     )
-
-                    result = await executor.ainvoke({
-                        "input": message,
-                        "stats": stats_str,
-                        "teacher_name": teacher_name,
-                        "teacher_email": teacher_email,
-                        "history_context": history_text or "No prior context provided.",
-                    })
-                    return AgentService._coerce_output_text(result.get("output", "No response generated."))
                 except AGENT_EXCEPTIONS as fallback_exc:
                     logger.exception("Teacher Groq fallback failed")
                     return AgentService._friendly_agent_error(fallback_exc)
@@ -469,11 +482,11 @@ class AgentService:
             prompt = ChatPromptTemplate.from_messages([
                 ("system", (
                     "You are a world-class 1-on-1 AI Study Tutor and Researcher, acting like a high-end research engine (Perplexity style).\n"
-                    "CORE INSTRUCTION: You MUST use your tools (search_web, search_youtube, search_uploaded_course_materials) for EVERY user query, even if you think you know the answer. Gather deep research first.\n\n"
+                    "Use tools when they add value (fresh sources, citations, videos, or uploaded material lookups); otherwise answer directly.\n\n"
                     "STUDENT PROFILE:\n"
                     "- VARK: {vark_style} | HM: {hm_style}\n\n"
                     "YOUR MISSION:\n"
-                    "1. DEEP DIVE: For every topic, search the web, course files, and YouTube.\n"
+                    "1. DEEP DIVE: When relevant, search the web, course files, and YouTube.\n"
                     "2. PERPLEXITY STYLE: Output answers in a structured, clean format with citations.\n"
                     "3. VISUALS & VIDEOS: Always end by suggesting '### Watch & Learn' with YouTube video links.\n"
                     "4. STYLE ADAPTATION: Adapt your response to their learning style.\n\n"
@@ -493,10 +506,11 @@ class AgentService:
                 tools=agent_tools,
                 verbose=True,
                 handle_parsing_errors=True,
-                max_iterations=6,
+                max_iterations=3,
+                max_execution_time=20,
             )
 
-            result = await executor.ainvoke({
+            result = await AgentService._invoke_executor_with_timeout(executor, {
                 "input": message,
                 "vark_style": vark_style,
                 "hm_style": hm_style,

@@ -250,7 +250,7 @@ class AgentService:
     def _friendly_agent_error(exc: Exception) -> str:
         message = str(exc)
         lowered = message.lower()
-        if "timed out" in lowered or "timeout" in lowered:
+        if "timed out" in lowered or "timeout" in lowered or "asyncio" in lowered:
             return "The assistant timed out while gathering sources. Please retry with a narrower request or ask for a direct explanation first."
         if "failed to call a function" in lowered or "failed_generation" in lowered:
             return "I hit a temporary tool-calling issue. Please try again or ask a fuller question like 'Explain photosynthesis with examples'."
@@ -385,7 +385,9 @@ class AgentService:
                 )
 
             llm = get_llm()
-            agent_tools = [search_uploaded_course_materials, search_web, search_youtube, send_email_to_student]
+            # Do NOT include send_email_to_student tool in agent chain to prevent auto-triggered SMTP delays on Vercel.
+            # Teachers use the dedicated /dashboard/send_email endpoint instead.
+            agent_tools = [search_uploaded_course_materials, search_web, search_youtube]
 
             prompt = ChatPromptTemplate.from_messages([
                 ("system", (
